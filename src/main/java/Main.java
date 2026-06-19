@@ -165,7 +165,7 @@ public class Main {
                     Process process = pb.start();
                     process.waitFor();
                 } catch (Exception e) {
-                    System.out.println(input + ": command not found");
+                    System.out.println(tokens.get(0) + ": command not found");
                 }
             }
         }
