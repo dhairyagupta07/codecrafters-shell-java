@@ -1,6 +1,7 @@
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
@@ -20,7 +21,6 @@ public class Main {
     }
 
     private static final List<BackgroundJob> activeJobs = new ArrayList<>();
-    private static int nextJobId = 1;
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
@@ -296,7 +296,7 @@ public class Main {
                     Process p = pb.start();
                     if (isBackground) {
                         String rawCommandStr = String.join(" ", cmdTokens);
-                        int jobId = nextJobId++;
+                        int jobId = getLowestAvailableJobId();
                         long pid = p.pid();
                         
                         System.out.println("[" + jobId + "] " + pid);
@@ -314,6 +314,24 @@ public class Main {
         }
 
         sc.close();
+    }
+
+    private static int getLowestAvailableJobId() {
+        List<Integer> sortedIds = new ArrayList<>();
+        for (BackgroundJob job : activeJobs) {
+            sortedIds.add(job.id);
+        }
+        Collections.sort(sortedIds);
+        
+        int candidate = 1;
+        for (int id : sortedIds) {
+            if (id == candidate) {
+                candidate++;
+            } else if (id > candidate) {
+                break;
+            }
+        }
+        return candidate;
     }
 
     private static void reapCompletedJobs() {
