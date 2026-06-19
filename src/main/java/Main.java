@@ -10,13 +10,11 @@ public class Main {
 
             String input = sc.nextLine();
 
-            if (input.equals("exit 0")) {
+            if (input.equals("exit")) {
                 break;
             }
 
-            if (!input.isEmpty()) {
-                System.out.println(input + ": command not found");
-            }
+            System.out.println(input + ": command not found");
         }
 
         sc.close();
