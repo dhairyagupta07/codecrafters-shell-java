@@ -288,11 +288,16 @@ public class Main {
             byte[] buffer = new byte[4096];
             int read;
             while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
+                try {
+                    out.write(buffer, 0, read);
+                    out.flush();
+                } catch (Exception e) {
+                    break;
+                }
             }
         }
 
-        pLeft.waitFor();
+        pLeft.destroy();
         pRight.waitFor();
     }
 
