@@ -25,6 +25,35 @@ public class Main {
         }
     }
 
+    static class Command {
+        List<String> tokens = new ArrayList<>();
+        String outFile = null;
+        String errFile = null;
+        boolean appendOut = false;
+        boolean appendErr = false;
+        boolean isBuiltin = false;
+
+        Command(List<String> rawTokens) {
+            for (int i = 0; i < rawTokens.size(); i++) {
+                String t = rawTokens.get(i);
+                if (t.equals(">") || t.equals("1>")) {
+                    if (i + 1 < rawTokens.size()) outFile = rawTokens.get(++i);
+                } else if (t.equals(">>") || t.equals("1>>")) {
+                    if (i + 1 < rawTokens.size()) { outFile = rawTokens.get(++i); appendOut = true; }
+                } else if (t.equals("2>")) {
+                    if (i + 1 < rawTokens.size()) errFile = rawTokens.get(++i);
+                } else if (t.equals("2>>")) {
+                    if (i + 1 < rawTokens.size()) { errFile = rawTokens.get(++i); appendErr = true; }
+                } else {
+                    tokens.add(t);
+                }
+            }
+            if (!tokens.isEmpty()) {
+                isBuiltin = Main.isBuiltin(tokens.get(0));
+            }
+        }
+    }
+
     private static final List<BackgroundJob> activeJobs = new ArrayList<>();
 
     public static void main(String[] args) throws Exception {
@@ -121,256 +150,170 @@ public class Main {
 
             if (tokens.isEmpty()) continue;
 
-            int pipeIndex = tokens.indexOf("|");
-            if (pipeIndex != -1) {
-                List<String> leftTokens = tokens.subList(0, pipeIndex);
-                List<String> rightTokens = tokens.subList(pipeIndex + 1, tokens.size());
-                currentDir = handlePipelineWithBuiltins(leftTokens, rightTokens, currentDir);
-                continue;
+            List<List<String>> rawCommands = new ArrayList<>();
+            List<String> cur = new ArrayList<>();
+            for (String t : tokens) {
+                if (t.equals("|")) {
+                    rawCommands.add(cur);
+                    cur = new ArrayList<>();
+                } else {
+                    cur.add(t);
+                }
+            }
+            rawCommands.add(cur);
+
+            List<Command> pipeline = new ArrayList<>();
+            for (List<String> raw : rawCommands) {
+                if (!raw.isEmpty()) {
+                    pipeline.add(new Command(raw));
+                }
             }
 
-            currentDir = handleSingleCommand(tokens, currentDir, isBackground);
+            if (pipeline.isEmpty() || pipeline.get(0).tokens.isEmpty()) continue;
+
+            for (Command c : pipeline) {
+                if (c.outFile != null) createOrPrepareFile(currentDir, c.outFile, c.appendOut);
+                if (c.errFile != null) createOrPrepareFile(currentDir, c.errFile, c.appendErr);
+            }
+
+            byte[] currentInput = new byte[0];
+            boolean hasInput = false;
+            List<ProcessBuilder> extBlock = new ArrayList<>();
+            List<Command> extBlockCmds = new ArrayList<>();
+
+            for (int i = 0; i < pipeline.size(); i++) {
+                Command c = pipeline.get(i);
+                if (c.tokens.isEmpty()) continue;
+
+                if (c.isBuiltin) {
+                    if (!extBlock.isEmpty()) {
+                        currentInput = runExternalBlock(extBlock, extBlockCmds, currentInput, hasInput, currentDir);
+                        extBlock.clear();
+                        extBlockCmds.clear();
+                        hasInput = true;
+                    }
+
+                    ByteArrayOutputStream outCapture = new ByteArrayOutputStream();
+                    ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
+
+                    executeBuiltin(c.tokens, new ByteArrayInputStream(currentInput), outCapture, errCapture, currentDir);
+
+                    if (c.errFile != null) {
+                        write(currentDir, c.errFile, errCapture.toString().trim(), true);
+                    } else if (errCapture.size() > 0) {
+                        System.err.print(errCapture.toString());
+                    }
+
+                    currentInput = outCapture.toByteArray();
+                    hasInput = true;
+
+                    if (c.tokens.get(0).equals("cd") && errCapture.size() == 0) {
+                        String path = c.tokens.size() > 1 ? c.tokens.get(1) : "";
+                        if (path.equals("~")) path = System.getenv("HOME");
+                        File f = new File(path);
+                        if (!f.isAbsolute()) f = new File(currentDir, path);
+                        if (f.exists() && f.isDirectory()) currentDir = f.getCanonicalPath();
+                    }
+                } else {
+                    ProcessBuilder pb = new ProcessBuilder(c.tokens).directory(new File(currentDir));
+                    if (c.errFile != null) {
+                        File targetErrFile = new File(c.errFile);
+                        if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, c.errFile);
+                        pb.redirectError(c.appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
+                    } else {
+                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                    }
+                    extBlock.add(pb);
+                    extBlockCmds.add(c);
+                }
+            }
+
+            if (!extBlock.isEmpty()) {
+                runExternalBlockLast(extBlock, extBlockCmds, currentInput, hasInput, currentDir, isBackground, String.join(" ", tokens));
+            } else {
+                Command lastCmd = pipeline.get(pipeline.size() - 1);
+                if (lastCmd.outFile != null) {
+                    write(currentDir, lastCmd.outFile, new String(currentInput).trim(), false);
+                } else if (currentInput.length > 0) {
+                    System.out.print(new String(currentInput));
+                }
+            }
         }
 
         sc.close();
     }
 
-    private static String handleSingleCommand(List<String> tokens, String currentDir, boolean isBackground) throws Exception {
-        ArrayList<String> cmdTokens = new ArrayList<>();
-        String outFile = null;
-        String errFile = null;
-        boolean appendOut = false;
-        boolean appendErr = false;
+    private static byte[] runExternalBlock(List<ProcessBuilder> pbs, List<Command> cmds, byte[] initialInput, boolean hasInput, String currentDir) throws Exception {
+        try {
+            ProcessBuilder lastPb = pbs.get(pbs.size() - 1);
+            lastPb.redirectOutput(ProcessBuilder.Redirect.PIPE);
 
-        for (int i = 0; i < tokens.size(); i++) {
-            String t = tokens.get(i);
+            List<Process> processes = ProcessBuilder.startPipeline(pbs);
 
-            if (t.equals(">") || t.equals("1>")) {
-                if (i + 1 < tokens.size()) outFile = tokens.get(i + 1);
-                break;
-            } else if (t.equals(">>") || t.equals("1>>")) {
-                if (i + 1 < tokens.size()) { outFile = tokens.get(i + 1); appendOut = true; }
-                break;
-            } else if (t.equals("2>")) {
-                if (i + 1 < tokens.size()) errFile = tokens.get(i + 1);
-                break;
-            } else if (t.equals("2>>")) {
-                if (i + 1 < tokens.size()) { errFile = tokens.get(i + 1); appendErr = true; }
-                break;
-            }
-            cmdTokens.add(t);
-        }
-
-        if (cmdTokens.isEmpty()) return currentDir;
-
-        if (outFile != null) createOrPrepareFile(currentDir, outFile, appendOut);
-        if (errFile != null) createOrPrepareFile(currentDir, errFile, appendErr);
-
-        String command = cmdTokens.get(0);
-
-        if (isBuiltin(command)) {
-            OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
-            OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
-
-            executeBuiltin(cmdTokens, new ByteArrayInputStream(new byte[0]), outStream, errStream, currentDir);
-
-            if (outFile != null) outStream.close();
-            if (errFile != null) errStream.close();
-
-            currentDir = System.getProperty("user.dir");
-        } else {
-            try {
-                ProcessBuilder pb = new ProcessBuilder(cmdTokens);
-                pb.directory(new File(currentDir));
-
-                if (outFile != null) {
-                    File targetFile = new File(outFile);
-                    if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-                    pb.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-                } else {
-                    pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                if (errFile != null) {
-                    File targetErrFile = new File(errFile);
-                    if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-                    pb.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
-                } else {
-                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                Process p = pb.start();
-                if (isBackground) {
-                    String rawCommandStr = String.join(" ", cmdTokens);
-                    int jobId = getLowestAvailableJobId();
-                    System.out.println("[" + jobId + "] " + p.pid());
-                    System.out.flush();
-                    activeJobs.add(new BackgroundJob(jobId, p, rawCommandStr));
-                } else {
-                    p.waitFor();
-                    System.out.flush();
-                    System.err.flush();
-                }
-            } catch (Exception e) {
-                write(currentDir, errFile, command + ": command not found", true);
-            }
-        }
-        return currentDir;
-    }
-
-    private static String handlePipelineWithBuiltins(List<String> left, List<String> right, String currentDir) throws Exception {
-        ArrayList<String> leftCmd = new ArrayList<>();
-        for (String t : left) {
-            if (t.equals(">") || t.equals("1>") || t.equals(">>") || t.equals("1>>") || t.equals("2>") || t.equals("2>>")) break;
-            leftCmd.add(t);
-        }
-
-        ArrayList<String> rightCmd = new ArrayList<>();
-        String outFile = null;
-        String errFile = null;
-        boolean appendOut = false;
-        boolean appendErr = false;
-
-        for (int i = 0; i < right.size(); i++) {
-            String t = right.get(i);
-            if (t.equals(">") || t.equals("1>")) {
-                if (i + 1 < right.size()) outFile = right.get(i + 1);
-                break;
-            } else if (t.equals(">>") || t.equals("1>>")) {
-                if (i + 1 < right.size()) { outFile = right.get(i + 1); appendOut = true; }
-                break;
-            } else if (t.equals("2>")) {
-                if (i + 1 < right.size()) errFile = right.get(i + 1);
-                break;
-            } else if (t.equals("2>>")) {
-                if (i + 1 < right.size()) { errFile = right.get(i + 1); appendErr = true; }
-                break;
-            }
-            rightCmd.add(t);
-        }
-
-        if (outFile != null) createOrPrepareFile(currentDir, outFile, appendOut);
-        if (errFile != null) createOrPrepareFile(currentDir, errFile, appendErr);
-
-        boolean leftIsBuiltin = isBuiltin(leftCmd.get(0));
-        boolean rightIsBuiltin = isBuiltin(rightCmd.get(0));
-
-        if (leftIsBuiltin) {
-            ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
-            executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, System.err, currentDir);
-            byte[] pipeData = pipelineBuffer.toByteArray();
-
-            if (rightIsBuiltin) {
-                OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
-                OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
-
-                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), outStream, errStream, currentDir);
-
-                if (outFile != null) outStream.close();
-                if (errFile != null) errStream.close();
-
-                currentDir = System.getProperty("user.dir");
-            } else {
-                ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
-                if (errFile != null) {
-                    File targetErrFile = new File(errFile);
-                    if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-                    pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
-                } else {
-                    pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                if (outFile != null) {
-                    File targetFile = new File(outFile);
-                    if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-                    pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-                } else {
-                    pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                Process pRight = pbRight.start();
-                try (OutputStream out = pRight.getOutputStream()) {
-                    out.write(pipeData);
+            if (hasInput && initialInput.length > 0) {
+                Process first = processes.get(0);
+                try (OutputStream out = first.getOutputStream()) {
+                    out.write(initialInput);
                     out.flush();
-                }
-                pRight.waitFor();
-                System.out.flush();
-                System.err.flush();
+                } catch (Exception e) {}
             }
-        } else {
-            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd).directory(new File(currentDir));
-            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
 
-            if (rightIsBuiltin) {
-                Process pLeft = pbLeft.start();
-                ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
-                try (InputStream in = pLeft.getInputStream()) {
-                    byte[] buf = new byte[4096];
-                    int r;
-                    while ((r = in.read(buf)) != -1) {
-                        pipelineBuffer.write(buf, 0, r);
-                    }
-                }
-                pLeft.waitFor();
-
-                byte[] pipeData = pipelineBuffer.toByteArray();
-                
-                OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
-                OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
-
-                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), outStream, errStream, currentDir);
-
-                if (outFile != null) outStream.close();
-                if (errFile != null) errStream.close();
-
-                currentDir = System.getProperty("user.dir");
-            } else {
-                ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
-                if (errFile != null) {
-                    File targetErrFile = new File(errFile);
-                    if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-                    pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
-                } else {
-                    pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                if (outFile != null) {
-                    File targetFile = new File(outFile);
-                    if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-                    pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-                } else {
-                    pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                }
-
-                Process pLeft = pbLeft.start();
-                Process pRight = pbRight.start();
-
-                Thread copyThread = new Thread(() -> {
-                    try (InputStream in = pLeft.getInputStream();
-                         OutputStream out = pRight.getOutputStream()) {
-                        byte[] buffer = new byte[4096];
-                        int read;
-                        while ((read = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, read);
-                            out.flush();
-                        }
-                    } catch (Exception e) {
-                    }
-                });
-                copyThread.start();
-
-                pLeft.waitFor();
-                pRight.waitFor();
-                copyThread.join();
-                System.out.flush();
-                System.err.flush();
+            ByteArrayOutputStream captured = new ByteArrayOutputStream();
+            Process lastProcess = processes.get(processes.size() - 1);
+            try (InputStream in = lastProcess.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int r;
+                while ((r = in.read(buf)) != -1) captured.write(buf, 0, r);
             }
+
+            for (Process p : processes) p.waitFor();
+            return captured.toByteArray();
+        } catch (Exception e) {
+            write(currentDir, cmds.get(0).errFile, cmds.get(0).tokens.get(0) + ": command not found", true);
+            return new byte[0];
         }
-
-        return currentDir;
     }
 
-    private static boolean isBuiltin(String cmd) {
+    private static void runExternalBlockLast(List<ProcessBuilder> pbs, List<Command> cmds, byte[] initialInput, boolean hasInput, String currentDir, boolean isBackground, String rawCommandStr) throws Exception {
+        try {
+            Command lastCmd = cmds.get(cmds.size() - 1);
+            ProcessBuilder lastPb = pbs.get(pbs.size() - 1);
+
+            if (lastCmd.outFile != null) {
+                File targetFile = new File(lastCmd.outFile);
+                if (!targetFile.isAbsolute()) targetFile = new File(currentDir, lastCmd.outFile);
+                lastPb.redirectOutput(lastCmd.appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+            } else {
+                lastPb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            List<Process> processes = ProcessBuilder.startPipeline(pbs);
+
+            if (hasInput && initialInput.length > 0) {
+                Process first = processes.get(0);
+                try (OutputStream out = first.getOutputStream()) {
+                    out.write(initialInput);
+                    out.flush();
+                } catch (Exception e) {}
+            }
+
+            if (isBackground) {
+                Process lastProcess = processes.get(processes.size() - 1);
+                int jobId = getLowestAvailableJobId();
+                System.out.println("[" + jobId + "] " + lastProcess.pid());
+                System.out.flush();
+                activeJobs.add(new BackgroundJob(jobId, lastProcess, rawCommandStr));
+            } else {
+                for (Process p : processes) p.waitFor();
+                System.out.flush();
+                System.err.flush();
+            }
+        } catch (Exception e) {
+            write(currentDir, cmds.get(0).errFile, cmds.get(0).tokens.get(0) + ": command not found", true);
+        }
+    }
+
+    static boolean isBuiltin(String cmd) {
         return cmd.equals("echo") || cmd.equals("pwd") || cmd.equals("cd") || cmd.equals("type") || cmd.equals("jobs");
     }
 
@@ -394,7 +337,7 @@ public class Main {
                     String sign = " ";
                     if (count == total) sign = "+";
                     else if (count == total - 1) sign = "-";
-                    
+
                     if (!job.process.isAlive()) {
                         out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
                         it.remove();
@@ -474,12 +417,6 @@ public class Main {
             System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
             System.out.flush();
         }
-    }
-
-    private static OutputStream getFileOutputStream(String dir, String file) throws Exception {
-        File targetFile = new File(file);
-        if (!targetFile.isAbsolute()) targetFile = new File(dir, file);
-        return new FileOutputStream(targetFile, true);
     }
 
     private static void createOrPrepareFile(String dir, String file, boolean append) throws Exception {
