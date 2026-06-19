@@ -1,9 +1,26 @@
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Scanner;
 
 public class Main {
+
+    static class BackgroundJob {
+        int id;
+        Process process;
+        String commandStr;
+
+        BackgroundJob(int id, Process process, String commandStr) {
+            this.id = id;
+            this.process = process;
+            this.commandStr = commandStr;
+        }
+    }
+
+    private static final List<BackgroundJob> activeJobs = new ArrayList<>();
+    private static int nextJobId = 1;
 
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
@@ -125,6 +142,14 @@ public class Main {
 
             if (cmdTokens.isEmpty()) continue;
 
+            boolean isBackground = false;
+            if (cmdTokens.get(cmdTokens.size() - 1).equals("&")) {
+                isBackground = true;
+                cmdTokens.remove(cmdTokens.size() - 1);
+            }
+
+            if (cmdTokens.isEmpty()) continue;
+
             if (outFile != null) {
                 createOrPrepareFile(currentDir, outFile, appendOut);
             }
@@ -134,7 +159,24 @@ public class Main {
 
             String command = cmdTokens.get(0);
 
-            if (command.equals("echo")) {
+            if (command.equals("jobs")) {
+                Iterator<BackgroundJob> it = activeJobs.iterator();
+                StringBuilder jobsOutput = new StringBuilder();
+                while (it.hasNext()) {
+                    BackgroundJob job = it.next();
+                    if (!job.process.isAlive()) {
+                        it.remove();
+                    } else {
+                        jobsOutput.append("[").append(job.id).append("] Running ")
+                                  .append(job.commandStr).append("\n");
+                    }
+                }
+                if (jobsOutput.length() > 0) {
+                    write(currentDir, outFile, jobsOutput.toString().trim(), false);
+                }
+            }
+
+            else if (command.equals("echo")) {
                 String output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
                 write(currentDir, outFile, output, false);
             }
@@ -168,7 +210,7 @@ public class Main {
                 String name = cmdTokens.get(1);
 
                 if (name.equals("echo") || name.equals("pwd") || name.equals("cd")
-                        || name.equals("type") || name.equals("exit")) {
+                        || name.equals("type") || name.equals("exit") || name.equals("jobs")) {
                     write(currentDir, outFile, name + " is a shell builtin", false);
                 } else {
                     String[] paths = System.getenv("PATH").split(":");
@@ -205,7 +247,9 @@ public class Main {
                             pb.redirectOutput(targetFile);
                         }
                     } else {
-                        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                        if (!isBackground) {
+                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                        }
                     }
 
                     if (errFile != null) {
@@ -219,11 +263,18 @@ public class Main {
                             pb.redirectError(targetErrFile);
                         }
                     } else {
-                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        if (!isBackground) {
+                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                        }
                     }
 
                     Process p = pb.start();
-                    p.waitFor();
+                    if (isBackground) {
+                        String rawCommandStr = String.join(" ", cmdTokens);
+                        activeJobs.add(new BackgroundJob(nextJobId++, p, rawCommandStr));
+                    } else {
+                        p.waitFor();
+                    }
 
                 } catch (Exception e) {
                     write(currentDir, errFile, command + ": command not found", true);
