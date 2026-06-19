@@ -92,6 +92,7 @@ public class Main {
             String outFile = null;
             String errFile = null;
             boolean appendOut = false;
+            boolean appendErr = false;
 
             for (int i = 0; i < tokens.size(); i++) {
                 String t = tokens.get(i);
@@ -112,6 +113,12 @@ public class Main {
                         errFile = tokens.get(i + 1);
                     }
                     break;
+                } else if (t.equals("2>>")) {
+                    if (i + 1 < tokens.size()) {
+                        errFile = tokens.get(i + 1);
+                        appendErr = true;
+                    }
+                    break;
                 }
                 cmdTokens.add(t);
             }
@@ -122,7 +129,7 @@ public class Main {
                 createOrPrepareFile(currentDir, outFile, appendOut);
             }
             if (errFile != null) {
-                createOrPrepareFile(currentDir, errFile, false);
+                createOrPrepareFile(currentDir, errFile, appendErr);
             }
 
             String command = cmdTokens.get(0);
@@ -206,7 +213,11 @@ public class Main {
                         if (!targetErrFile.isAbsolute()) {
                             targetErrFile = new File(currentDir, errFile);
                         }
-                        pb.redirectError(targetErrFile);
+                        if (appendErr) {
+                            pb.redirectError(ProcessBuilder.Redirect.appendTo(targetErrFile));
+                        } else {
+                            pb.redirectError(targetErrFile);
+                        }
                     } else {
                         pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                     }
