@@ -105,12 +105,9 @@ public class Main {
             String command = cmdTokens.get(0);
 
             if (command.equals("echo")) {
-                String output;
-                if (cmdTokens.size() > 1) {
-                    output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
-                } else {
-                    output = "";
-                }
+                String output = cmdTokens.size() > 1
+                        ? String.join(" ", cmdTokens.subList(1, cmdTokens.size()))
+                        : "";
 
                 if (outFile != null) {
                     FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
@@ -141,7 +138,6 @@ public class Main {
                 }
 
                 File newDir = new File(path);
-
                 if (!newDir.isAbsolute()) {
                     newDir = new File(currentDir, path);
                 }
@@ -163,8 +159,8 @@ public class Main {
             else if (command.equals("type")) {
                 String cmdName = cmdTokens.get(1);
 
-                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type") ||
-                    cmdName.equals("pwd") || cmdName.equals("cd")) {
+                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type")
+                        || cmdName.equals("pwd") || cmdName.equals("cd")) {
                     System.out.println(cmdName + " is a shell builtin");
                 } else {
                     String pathEnv = System.getenv("PATH");
@@ -199,7 +195,6 @@ public class Main {
 
                     Process process = pb.start();
                     process.waitFor();
-
                 } catch (Exception e) {
                     System.out.println(cmdTokens.get(0) + ": command not found");
                 }
