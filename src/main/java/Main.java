@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Scanner;
 
@@ -90,22 +91,50 @@ public class Main {
             if (sb.length() > 0) tokens.add(sb.toString());
             if (tokens.isEmpty()) continue;
 
-            String command = tokens.get(0);
+            String outFile = null;
+            ArrayList<String> cmdTokens = new ArrayList<>();
+
+            for (int i = 0; i < tokens.size(); i++) {
+                if (tokens.get(i).equals(">")) {
+                    outFile = tokens.get(i + 1);
+                    break;
+                }
+                cmdTokens.add(tokens.get(i));
+            }
+
+            String command = cmdTokens.get(0);
 
             if (command.equals("echo")) {
-                if (tokens.size() > 1) {
-                    System.out.println(String.join(" ", tokens.subList(1, tokens.size())));
+                String output;
+                if (cmdTokens.size() > 1) {
+                    output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
                 } else {
-                    System.out.println();
+                    output = "";
+                }
+
+                if (outFile != null) {
+                    FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
+                    fos.write(output.getBytes());
+                    fos.close();
+                } else {
+                    System.out.println(output);
                 }
             }
 
             else if (command.equals("pwd")) {
-                System.out.println(currentDir);
+                String output = currentDir;
+
+                if (outFile != null) {
+                    FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
+                    fos.write(output.getBytes());
+                    fos.close();
+                } else {
+                    System.out.println(output);
+                }
             }
 
             else if (command.equals("cd")) {
-                String path = tokens.size() > 1 ? tokens.get(1) : "";
+                String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
 
                 if (path.equals("~")) {
                     path = System.getenv("HOME");
@@ -132,7 +161,7 @@ public class Main {
             }
 
             else if (command.equals("type")) {
-                String cmdName = tokens.get(1);
+                String cmdName = cmdTokens.get(1);
 
                 if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type") ||
                     cmdName.equals("pwd") || cmdName.equals("cd")) {
@@ -159,13 +188,20 @@ public class Main {
 
             else {
                 try {
-                    ProcessBuilder pb = new ProcessBuilder(tokens);
+                    ProcessBuilder pb = new ProcessBuilder(cmdTokens);
                     pb.directory(new File(currentDir));
-                    pb.inheritIO();
+
+                    if (outFile != null) {
+                        pb.redirectOutput(new File(currentDir, outFile));
+                    } else {
+                        pb.inheritIO();
+                    }
+
                     Process process = pb.start();
                     process.waitFor();
+
                 } catch (Exception e) {
-                    System.out.println(tokens.get(0) + ": command not found");
+                    System.out.println(cmdTokens.get(0) + ": command not found");
                 }
             }
         }
