@@ -271,7 +271,13 @@ public class Main {
                     Process p = pb.start();
                     if (isBackground) {
                         String rawCommandStr = String.join(" ", cmdTokens);
-                        activeJobs.add(new BackgroundJob(nextJobId++, p, rawCommandStr));
+                        int jobId = nextJobId++;
+                        long pid = p.pid();
+                        
+                        System.out.println("[" + jobId + "] " + pid);
+                        System.out.flush();
+                        
+                        activeJobs.add(new BackgroundJob(jobId, p, rawCommandStr));
                     } else {
                         p.waitFor();
                     }
