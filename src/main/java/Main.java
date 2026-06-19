@@ -169,29 +169,15 @@ public class Main {
         String command = cmdTokens.get(0);
 
         if (isBuiltin(command)) {
-            ByteArrayOutputStream outCapture = new ByteArrayOutputStream();
-            ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
-            executeBuiltin(cmdTokens, new ByteArrayInputStream(new byte[0]), outCapture, errCapture, currentDir);
-            
-            if (outFile != null) {
-                write(currentDir, outFile, outCapture.toString().trim(), false);
-            } else if (outCapture.size() > 0) {
-                System.out.print(outCapture.toString());
-            }
-            
-            if (errFile != null) {
-                write(currentDir, errFile, errCapture.toString().trim(), true);
-            } else if (errCapture.size() > 0) {
-                System.err.print(errCapture.toString());
-            }
+            OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
+            OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
 
-            if (command.equals("cd") && errCapture.size() == 0) {
-                String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
-                if (path.equals("~")) path = System.getenv("HOME");
-                File f = new File(path);
-                if (!f.isAbsolute()) f = new File(currentDir, path);
-                currentDir = f.getCanonicalPath();
-            }
+            executeBuiltin(cmdTokens, new ByteArrayInputStream(new byte[0]), outStream, errStream, currentDir);
+
+            if (outFile != null) outStream.close();
+            if (errFile != null) errStream.close();
+
+            currentDir = System.getProperty("user.dir");
         } else {
             try {
                 ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -271,29 +257,19 @@ public class Main {
 
         if (leftIsBuiltin) {
             ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
-            ByteArrayOutputStream leftErr = new ByteArrayOutputStream();
-            executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, leftErr, currentDir);
-            if (leftErr.size() > 0) {
-                System.err.print(leftErr.toString());
-            }
+            executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, System.err, currentDir);
             byte[] pipeData = pipelineBuffer.toByteArray();
 
             if (rightIsBuiltin) {
-                ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
-                ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
-                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
+                OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
+                OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
 
-                if (outFile != null) {
-                    write(currentDir, outFile, rightOut.toString().trim(), false);
-                } else if (rightOut.size() > 0) {
-                    System.out.print(rightOut.toString());
-                }
+                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), outStream, errStream, currentDir);
 
-                if (errFile != null) {
-                    write(currentDir, errFile, rightErr.toString().trim(), true);
-                } else if (rightErr.size() > 0) {
-                    System.err.print(rightErr.toString());
-                }
+                if (outFile != null) outStream.close();
+                if (errFile != null) errStream.close();
+
+                currentDir = System.getProperty("user.dir");
             } else {
                 ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
                 if (errFile != null) {
@@ -338,21 +314,16 @@ public class Main {
                 pLeft.waitFor();
 
                 byte[] pipeData = pipelineBuffer.toByteArray();
-                ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
-                ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
-                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
+                
+                OutputStream outStream = outFile != null ? getFileOutputStream(currentDir, outFile) : System.out;
+                OutputStream errStream = errFile != null ? getFileOutputStream(currentDir, errFile) : System.err;
 
-                if (outFile != null) {
-                    write(currentDir, outFile, rightOut.toString().trim(), false);
-                } else if (rightOut.size() > 0) {
-                    System.out.print(rightOut.toString());
-                }
+                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), outStream, errStream, currentDir);
 
-                if (errFile != null) {
-                    write(currentDir, errFile, rightErr.toString().trim(), true);
-                } else if (rightErr.size() > 0) {
-                    System.err.print(rightErr.toString());
-                }
+                if (outFile != null) outStream.close();
+                if (errFile != null) errStream.close();
+
+                currentDir = System.getProperty("user.dir");
             } else {
                 ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
                 if (errFile != null) {
@@ -394,14 +365,6 @@ public class Main {
                 System.out.flush();
                 System.err.flush();
             }
-        }
-
-        if (rightCmd.get(0).equals("cd") && !rightIsBuiltin) {
-            String path = rightCmd.size() > 1 ? rightCmd.get(1) : "";
-            if (path.equals("~")) path = System.getenv("HOME");
-            File f = new File(path);
-            if (!f.isAbsolute()) f = new File(currentDir, path);
-            if (f.exists() && f.isDirectory()) currentDir = f.getCanonicalPath();
         }
 
         return currentDir;
@@ -511,6 +474,12 @@ public class Main {
             System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
             System.out.flush();
         }
+    }
+
+    private static OutputStream getFileOutputStream(String dir, String file) throws Exception {
+        File targetFile = new File(file);
+        if (!targetFile.isAbsolute()) targetFile = new File(dir, file);
+        return new FileOutputStream(targetFile, true);
     }
 
     private static void createOrPrepareFile(String dir, String file, boolean append) throws Exception {
