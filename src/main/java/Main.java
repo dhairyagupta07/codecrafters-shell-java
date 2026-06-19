@@ -5,7 +5,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
-        // 🔥 we track current directory manually
+        // track current directory manually (IMPORTANT for cd)
         String currentDir = System.getProperty("user.dir");
 
         while (true) {
@@ -49,6 +49,8 @@ public class Main {
 
                 if (newDir.exists() && newDir.isDirectory()) {
                     currentDir = newDir.getCanonicalPath();
+                } else {
+                    System.out.println("cd: " + path + ": No such file or directory");
                 }
             }
 
@@ -90,12 +92,13 @@ public class Main {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(parts);
 
-                    // 🔥 IMPORTANT: run in currentDir
+                    // run in current directory (IMPORTANT for cd)
                     pb.directory(new File(currentDir));
                     pb.inheritIO();
 
                     Process process = pb.start();
                     process.waitFor();
+
                 } catch (Exception e) {
                     System.out.println(input + ": command not found");
                 }
