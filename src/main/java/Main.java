@@ -264,10 +264,40 @@ public class Main {
         if (outFile != null) createOrPrepareFile(currentDir, outFile, appendOut);
         if (errFile != null) createOrPrepareFile(currentDir, errFile, appendErr);
 
+        boolean leftIsBuiltin = isBuiltin(leftCmd.get(0));
+        boolean rightIsBuiltin = isBuiltin(rightCmd.get(0));
+
+        if (!leftIsBuiltin && !rightIsBuiltin) {
+            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd).directory(new File(currentDir));
+            ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
+
+            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
+            if (errFile != null) {
+                File targetErrFile = new File(errFile);
+                if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
+                pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
+            } else {
+                pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            if (outFile != null) {
+                File targetFile = new File(outFile);
+                if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
+                pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+            } else {
+                pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            List<Process> pipeline = ProcessBuilder.startPipeline(List.of(pbLeft, pbRight));
+            for (Process p : pipeline) {
+                p.waitFor();
+            }
+            return currentDir;
+        }
+
         ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
         ByteArrayOutputStream leftErr = new ByteArrayOutputStream();
 
-        boolean leftIsBuiltin = isBuiltin(leftCmd.get(0));
         if (leftIsBuiltin) {
             executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, leftErr, currentDir);
             if (leftErr.size() > 0) {
@@ -290,7 +320,6 @@ public class Main {
         }
 
         byte[] pipeData = pipelineBuffer.toByteArray();
-        boolean rightIsBuiltin = isBuiltin(rightCmd.get(0));
 
         if (rightIsBuiltin) {
             ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
