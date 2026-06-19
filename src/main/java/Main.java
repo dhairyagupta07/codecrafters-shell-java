@@ -231,6 +231,7 @@ public class Main {
                 }
             }
 
+            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -247,9 +248,7 @@ public class Main {
                             pb.redirectOutput(targetFile);
                         }
                     } else {
-                        if (!isBackground) {
-                            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-                        }
+                        pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                     }
 
                     if (errFile != null) {
@@ -263,9 +262,7 @@ public class Main {
                             pb.redirectError(targetErrFile);
                         }
                     } else {
-                        if (!isBackground) {
-                            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                        }
+                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                     }
 
                     Process p = pb.start();
