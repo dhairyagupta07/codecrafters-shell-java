@@ -5,7 +5,6 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
-        // current working directory tracked manually
         String currentDir = System.getProperty("user.dir");
 
         while (true) {
@@ -41,6 +40,11 @@ public class Main {
             else if (command.equals("cd")) {
                 String path = parts.length > 1 ? parts[1] : "";
 
+                // ⭐ HOME directory support
+                if (path.equals("~")) {
+                    path = System.getenv("HOME");
+                }
+
                 File newDir = new File(path);
 
                 if (!newDir.isAbsolute()) {
@@ -54,10 +58,10 @@ public class Main {
                     if (finalDir.exists() && finalDir.isDirectory()) {
                         currentDir = canonicalPath;
                     } else {
-                        System.out.println("cd: " + path + ": No such file or directory");
+                        System.out.println("cd: " + parts[1] + ": No such file or directory");
                     }
                 } catch (Exception e) {
-                    System.out.println("cd: " + path + ": No such file or directory");
+                    System.out.println("cd: " + parts[1] + ": No such file or directory");
                 }
             }
 
@@ -99,8 +103,6 @@ public class Main {
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(parts);
-
-                    // important: respect cd
                     pb.directory(new File(currentDir));
                     pb.inheritIO();
 
