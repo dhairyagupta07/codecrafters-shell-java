@@ -198,16 +198,32 @@ public class Main {
 
                     executeBuiltin(c.tokens, new ByteArrayInputStream(currentInput), outCapture, errCapture, currentDir);
 
+                    byte[] errBytes = errCapture.toByteArray();
                     if (c.errFile != null) {
-                        write(currentDir, c.errFile, errCapture.toString().trim(), true);
-                    } else if (errCapture.size() > 0) {
-                        System.err.print(errCapture.toString());
+                        if (errBytes.length > 0) {
+                            File f = new File(c.errFile);
+                            if (!f.isAbsolute()) f = new File(currentDir, c.errFile);
+                            try (FileOutputStream fos = new FileOutputStream(f, true)) { fos.write(errBytes); }
+                        }
+                    } else if (errBytes.length > 0) {
+                        System.err.write(errBytes);
+                        System.err.flush();
                     }
 
-                    currentInput = outCapture.toByteArray();
+                    byte[] outBytes = outCapture.toByteArray();
+                    if (c.outFile != null) {
+                        if (outBytes.length > 0) {
+                            File f = new File(c.outFile);
+                            if (!f.isAbsolute()) f = new File(currentDir, c.outFile);
+                            try (FileOutputStream fos = new FileOutputStream(f, true)) { fos.write(outBytes); }
+                        }
+                        currentInput = new byte[0];
+                    } else {
+                        currentInput = outBytes;
+                    }
                     hasInput = true;
 
-                    if (c.tokens.get(0).equals("cd") && errCapture.size() == 0) {
+                    if (c.tokens.get(0).equals("cd") && errBytes.length == 0) {
                         String path = c.tokens.size() > 1 ? c.tokens.get(1) : "";
                         if (path.equals("~")) path = System.getenv("HOME");
                         File f = new File(path);
@@ -231,11 +247,9 @@ public class Main {
             if (!extBlock.isEmpty()) {
                 runExternalBlockLast(extBlock, extBlockCmds, currentInput, hasInput, currentDir, isBackground, String.join(" ", tokens));
             } else {
-                Command lastCmd = pipeline.get(pipeline.size() - 1);
-                if (lastCmd.outFile != null) {
-                    write(currentDir, lastCmd.outFile, new String(currentInput).trim(), false);
-                } else if (currentInput.length > 0) {
-                    System.out.print(new String(currentInput));
+                if (currentInput.length > 0) {
+                    System.out.write(currentInput);
+                    System.out.flush();
                 }
             }
         }
