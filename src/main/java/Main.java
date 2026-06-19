@@ -126,13 +126,13 @@ public class Main {
                 continue;
             }
 
-            handleSingleCommand(tokens, currentDir, isBackground);
+            currentDir = handleSingleCommand(tokens, currentDir, isBackground);
         }
 
         sc.close();
     }
 
-    private static void handleSingleCommand(List<String> tokens, String currentDir, boolean isBackground) throws Exception {
+    private static String handleSingleCommand(List<String> tokens, String currentDir, boolean isBackground) throws Exception {
         ArrayList<String> cmdTokens = new ArrayList<>();
         String outFile = null;
         String errFile = null;
@@ -168,7 +168,7 @@ public class Main {
             cmdTokens.add(t);
         }
 
-        if (cmdTokens.isEmpty()) return;
+        if (cmdTokens.isEmpty()) return currentDir;
 
         if (outFile != null) createOrPrepareFile(currentDir, outFile, appendOut);
         if (errFile != null) createOrPrepareFile(currentDir, errFile, appendErr);
@@ -183,7 +183,7 @@ public class Main {
         } else if (command.equals("pwd")) {
             write(currentDir, outFile, currentDir, false);
         } else if (command.equals("cd")) {
-            executeCdBuiltin(cmdTokens, errFile, currentDir);
+            currentDir = executeCdBuiltin(cmdTokens, errFile, currentDir);
         } else if (command.equals("type")) {
             executeTypeBuiltin(cmdTokens, outFile, currentDir);
         } else {
@@ -221,6 +221,7 @@ public class Main {
                 write(currentDir, errFile, command + ": command not found", true);
             }
         }
+        return currentDir;
     }
 
     private static void handlePipeline(List<String> left, List<String> right, String currentDir) throws Exception {
@@ -336,7 +337,7 @@ public class Main {
         }
     }
 
-    private static void executeCdBuiltin(List<String> cmdTokens, String errFile, String currentDir) throws Exception {
+    private static String executeCdBuiltin(List<String> cmdTokens, String errFile, String currentDir) throws Exception {
         String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
         if (path.equals("~")) path = System.getenv("HOME");
 
@@ -348,12 +349,14 @@ public class Main {
             File real = new File(canon);
             if (real.exists() && real.isDirectory()) {
                 System.setProperty("user.dir", canon);
+                return canon;
             } else {
                 write(currentDir, errFile, "cd: " + path + ": No such file or directory", true);
             }
         } catch (Exception e) {
             write(currentDir, errFile, "cd: " + path + ": No such file or directory", true);
         }
+        return currentDir;
     }
 
     private static void executeTypeBuiltin(List<String> cmdTokens, String outFile, String currentDir) throws Exception {
