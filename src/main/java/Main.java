@@ -87,44 +87,59 @@ public class Main {
             if (sb.length() > 0) tokens.add(sb.toString());
             if (tokens.isEmpty()) continue;
 
-            // SAFE REDIRECTION PARSING
             ArrayList<String> cmdTokens = new ArrayList<>();
             String outFile = null;
 
             for (int i = 0; i < tokens.size(); i++) {
-                if (tokens.get(i).equals(">")) {
+                String t = tokens.get(i);
+
+                if (t.equals(">") || t.equals("1>")) {
                     if (i + 1 < tokens.size()) {
                         outFile = tokens.get(i + 1);
                     }
                     break;
                 }
-                cmdTokens.add(tokens.get(i));
+
+                cmdTokens.add(t);
             }
 
             if (cmdTokens.isEmpty()) continue;
 
             String command = cmdTokens.get(0);
+            String output = null;
 
-            // BUILTINS
             if (command.equals("echo")) {
-                String output = cmdTokens.size() > 1
+                output = cmdTokens.size() > 1
                         ? String.join(" ", cmdTokens.subList(1, cmdTokens.size()))
                         : "";
-
-                if (outFile != null) {
-                    writeFile(currentDir, outFile, output);
-                } else {
-                    System.out.println(output);
-                }
             }
 
             else if (command.equals("pwd")) {
-                String output = currentDir;
+                output = currentDir;
+            }
 
-                if (outFile != null) {
-                    writeFile(currentDir, outFile, output);
+            else if (command.equals("type")) {
+                String name = cmdTokens.get(1);
+
+                if (name.equals("echo") || name.equals("pwd") || name.equals("cd") ||
+                    name.equals("type") || name.equals("exit")) {
+                    output = name + " is a shell builtin";
                 } else {
-                    System.out.println(output);
+                    String[] paths = System.getenv("PATH").split(":");
+                    boolean found = false;
+
+                    for (String p : paths) {
+                        File f = new File(p, name);
+                        if (f.exists() && f.canExecute()) {
+                            output = name + " is " + f.getAbsolutePath();
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        output = name + ": not found";
+                    }
                 }
             }
 
@@ -132,51 +147,27 @@ public class Main {
                 String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
                 if (path.equals("~")) path = System.getenv("HOME");
 
-                File newDir = new File(path);
-                if (!newDir.isAbsolute()) {
-                    newDir = new File(currentDir, path);
+                File f = new File(path);
+                if (!f.isAbsolute()) {
+                    f = new File(currentDir, path);
                 }
 
                 try {
-                    String canonical = newDir.getCanonicalPath();
-                    File f = new File(canonical);
+                    String canon = f.getCanonicalPath();
+                    File real = new File(canon);
 
-                    if (f.exists() && f.isDirectory()) {
-                        currentDir = canonical;
+                    if (real.exists() && real.isDirectory()) {
+                        currentDir = canon;
                     } else {
                         System.out.println("cd: " + path + ": No such file or directory");
                     }
                 } catch (Exception e) {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
+
+                continue;
             }
 
-            else if (command.equals("type")) {
-                String cmdName = cmdTokens.get(1);
-
-                if (cmdName.equals("echo") || cmdName.equals("exit") ||
-                    cmdName.equals("type") || cmdName.equals("pwd") || cmdName.equals("cd")) {
-                    System.out.println(cmdName + " is a shell builtin");
-                } else {
-                    String[] paths = System.getenv("PATH").split(":");
-                    boolean found = false;
-
-                    for (String p : paths) {
-                        File f = new File(p, cmdName);
-                        if (f.exists() && f.canExecute()) {
-                            System.out.println(cmdName + " is " + f.getAbsolutePath());
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        System.out.println(cmdName + ": not found");
-                    }
-                }
-            }
-
-            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -184,6 +175,7 @@ public class Main {
 
                     if (outFile != null) {
                         pb.redirectOutput(new File(currentDir, outFile));
+                        pb.inheritIO(); // keep stderr on terminal
                     } else {
                         pb.inheritIO();
                     }
@@ -193,15 +185,18 @@ public class Main {
                 } catch (Exception e) {
                     System.out.println(command + ": command not found");
                 }
+                continue;
+            }
+
+            if (outFile != null) {
+                FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
+                fos.write(output.getBytes());
+                fos.close();
+            } else {
+                System.out.println(output);
             }
         }
 
         sc.close();
-    }
-
-    private static void writeFile(String dir, String file, String content) throws Exception {
-        FileOutputStream fos = new FileOutputStream(new File(dir, file));
-        fos.write(content.getBytes());
-        fos.close();
     }
 }
