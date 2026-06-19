@@ -18,22 +18,28 @@ public class Main {
                 break;
             }
 
-            String command;
             ArrayList<String> tokens = new ArrayList<>();
+            StringBuilder sb = new StringBuilder();
+
+            boolean inSingle = false;
+            boolean inDouble = false;
 
             char[] arr = input.toCharArray();
-            StringBuilder sb = new StringBuilder();
-            boolean inSingle = false;
 
             for (int i = 0; i < arr.length; i++) {
                 char c = arr[i];
 
-                if (c == '\'') {
+                if (c == '\'' && !inDouble) {
                     inSingle = !inSingle;
                     continue;
                 }
 
-                if (!inSingle && c == ' ') {
+                if (c == '"' && !inSingle) {
+                    inDouble = !inDouble;
+                    continue;
+                }
+
+                if (!inSingle && !inDouble && c == ' ') {
                     if (sb.length() > 0) {
                         tokens.add(sb.toString());
                         sb.setLength(0);
@@ -47,9 +53,9 @@ public class Main {
                 tokens.add(sb.toString());
             }
 
-            if (tokens.size() == 0) continue;
+            if (tokens.isEmpty()) continue;
 
-            command = tokens.get(0);
+            String command = tokens.get(0);
 
             if (command.equals("echo")) {
                 if (tokens.size() > 1) {
