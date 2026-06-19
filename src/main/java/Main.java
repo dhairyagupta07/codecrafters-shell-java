@@ -13,8 +13,10 @@ public class Main {
             System.out.flush();
 
             String input = sc.nextLine();
-            if (input.isEmpty()) continue;
-            if (input.equals("exit")) break;
+            if (input.isEmpty())
+                continue;
+            if (input.equals("exit"))
+                break;
 
             ArrayList<String> tokens = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
@@ -26,8 +28,10 @@ public class Main {
                 char c = input.charAt(i);
 
                 if (inSingle) {
-                    if (c == '\'') inSingle = false;
-                    else sb.append(c);
+                    if (c == '\'')
+                        inSingle = false;
+                    else
+                        sb.append(c);
                     continue;
                 }
 
@@ -84,8 +88,10 @@ public class Main {
                 }
             }
 
-            if (sb.length() > 0) tokens.add(sb.toString());
-            if (tokens.isEmpty()) continue;
+            if (sb.length() > 0)
+                tokens.add(sb.toString());
+            if (tokens.isEmpty())
+                continue;
 
             ArrayList<String> cmdTokens = new ArrayList<>();
             String outFile = null;
@@ -103,7 +109,8 @@ public class Main {
                 cmdTokens.add(t);
             }
 
-            if (cmdTokens.isEmpty()) continue;
+            if (cmdTokens.isEmpty())
+                continue;
 
             String command = cmdTokens.get(0);
             String output = null;
@@ -122,7 +129,7 @@ public class Main {
                 String name = cmdTokens.get(1);
 
                 if (name.equals("echo") || name.equals("pwd") || name.equals("cd") ||
-                    name.equals("type") || name.equals("exit")) {
+                        name.equals("type") || name.equals("exit")) {
                     output = name + " is a shell builtin";
                 } else {
                     String[] paths = System.getenv("PATH").split(":");
@@ -145,7 +152,8 @@ public class Main {
 
             else if (command.equals("cd")) {
                 String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
-                if (path.equals("~")) path = System.getenv("HOME");
+                if (path.equals("~"))
+                    path = System.getenv("HOME");
 
                 File f = new File(path);
                 if (!f.isAbsolute()) {
@@ -175,7 +183,7 @@ public class Main {
 
                     if (outFile != null) {
                         pb.redirectOutput(new File(currentDir, outFile));
-                        pb.inheritIO(); // keep stderr on terminal
+                        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                     } else {
                         pb.inheritIO();
                     }
