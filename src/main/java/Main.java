@@ -26,24 +26,48 @@ public class Main {
             for (int i = 0; i < input.length(); i++) {
                 char c = input.charAt(i);
 
+                if (inDouble && escape) {
+                    if (c == '\\' || c == '"' || c == '$' || c == '`') {
+                        sb.append(c);
+                    } else {
+                        sb.append('\\').append(c);
+                    }
+                    escape = false;
+                    continue;
+                }
+
+                if (inDouble && c == '\\') {
+                    escape = true;
+                    continue;
+                }
+
+                if (inSingle) {
+                    if (c == '\'') {
+                        inSingle = false;
+                    } else {
+                        sb.append(c);
+                    }
+                    continue;
+                }
+
+                if (!inDouble && !inSingle && c == '\\') {
+                    escape = true;
+                    continue;
+                }
+
                 if (escape) {
                     sb.append(c);
                     escape = false;
                     continue;
                 }
 
-                if (!inSingle && !inDouble && c == '\\') {
-                    escape = true;
-                    continue;
-                }
-
                 if (c == '\'' && !inDouble) {
-                    inSingle = !inSingle;
+                    inSingle = true;
                     continue;
                 }
 
                 if (c == '"' && !inSingle) {
-                    inDouble = !inDouble;
+                    inDouble = true;
                     continue;
                 }
 
