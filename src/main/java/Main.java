@@ -14,9 +14,7 @@ public class Main {
             String input = sc.nextLine();
             if (input.isEmpty()) continue;
 
-            if (input.equals("exit")) {
-                break;
-            }
+            if (input.equals("exit")) break;
 
             ArrayList<String> tokens = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
@@ -28,68 +26,34 @@ public class Main {
             for (int i = 0; i < input.length(); i++) {
                 char c = input.charAt(i);
 
-                if (inSingle) {
-                    if (c == '\\') {
-                        sb.append('\\');
-                    } else if (c == '\'') {
-                        inSingle = false;
-                    } else {
-                        sb.append(c);
-                    }
-                    continue;
-                }
-
-                if (inDouble) {
-                    if (!escape && c == '\\') {
-                        escape = true;
-                        continue;
-                    }
-
-                    if (escape) {
-                        sb.append(c);
-                        escape = false;
-                        continue;
-                    }
-
-                    if (c == '"') {
-                        inDouble = false;
-                        continue;
-                    }
-
+                if (escape) {
                     sb.append(c);
+                    escape = false;
                     continue;
                 }
 
-                if (!inSingle && !inDouble) {
-                    if (c == '\\') {
-                        escape = true;
-                        continue;
-                    }
+                if (!inSingle && !inDouble && c == '\\') {
+                    escape = true;
+                    continue;
+                }
 
-                    if (escape) {
-                        sb.append(c);
-                        escape = false;
-                        continue;
-                    }
+                if (c == '\'' && !inDouble) {
+                    inSingle = !inSingle;
+                    continue;
+                }
 
-                    if (c == '\'') {
-                        inSingle = true;
-                        continue;
-                    }
+                if (c == '"' && !inSingle) {
+                    inDouble = !inDouble;
+                    continue;
+                }
 
-                    if (c == '"') {
-                        inDouble = true;
-                        continue;
+                if (!inSingle && !inDouble && c == ' ') {
+                    if (sb.length() > 0) {
+                        tokens.add(sb.toString());
+                        sb.setLength(0);
                     }
-
-                    if (c == ' ') {
-                        if (sb.length() > 0) {
-                            tokens.add(sb.toString());
-                            sb.setLength(0);
-                        }
-                    } else {
-                        sb.append(c);
-                    }
+                } else {
+                    sb.append(c);
                 }
             }
 
