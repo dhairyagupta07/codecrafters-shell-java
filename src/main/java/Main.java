@@ -170,7 +170,11 @@ public class Main {
                     pb.directory(new File(currentDir));
 
                     if (outFile != null) {
-                        pb.redirectOutput(new File(currentDir, outFile));
+                        File targetFile = new File(outFile);
+                        if (!targetFile.isAbsolute()) {
+                            targetFile = new File(currentDir, outFile);
+                        }
+                        pb.redirectOutput(targetFile);
                         pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                     } else {
                         pb.inheritIO();
@@ -189,12 +193,19 @@ public class Main {
     }
 
     private static void write(String dir, String file, String output) throws Exception {
+        // Always append a newline character to mirror standard shell behavior
+        String formattedOutput = output + "\n";
+        
         if (file != null) {
-            FileOutputStream fos = new FileOutputStream(new File(dir, file));
-            fos.write(output.getBytes());
+            File targetFile = new File(file);
+            if (!targetFile.isAbsolute()) {
+                targetFile = new File(dir, file);
+            }
+            FileOutputStream fos = new FileOutputStream(targetFile);
+            fos.write(formattedOutput.getBytes());
             fos.close();
         } else {
-            System.out.println(output);
+            System.out.print(formattedOutput);
         }
     }
 }
