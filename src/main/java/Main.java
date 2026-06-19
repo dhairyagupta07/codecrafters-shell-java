@@ -160,6 +160,14 @@ public class Main {
             String command = cmdTokens.get(0);
 
             if (command.equals("jobs")) {
+                int targetId = -1;
+                if (cmdTokens.size() > 1 && cmdTokens.get(1).startsWith("%")) {
+                    try {
+                        targetId = Integer.parseInt(cmdTokens.get(1).substring(1));
+                    } catch (NumberFormatException e) {
+                    }
+                }
+
                 Iterator<BackgroundJob> it = activeJobs.iterator();
                 StringBuilder jobsOutput = new StringBuilder();
                 while (it.hasNext()) {
@@ -167,8 +175,10 @@ public class Main {
                     if (!job.process.isAlive()) {
                         it.remove();
                     } else {
-                        jobsOutput.append("[").append(job.id).append("] Running ")
-                                  .append(job.commandStr).append("\n");
+                        if (targetId == -1 || job.id == targetId) {
+                            jobsOutput.append("[").append(job.id).append("] Running ")
+                                      .append(job.commandStr).append("\n");
+                        }
                     }
                 }
                 if (jobsOutput.length() > 0) {
@@ -231,7 +241,6 @@ public class Main {
                 }
             }
 
-            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
