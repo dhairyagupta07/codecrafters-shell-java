@@ -11,7 +11,7 @@ public class Main {
             System.out.print("$ ");
             System.out.flush();
 
-            String input = sc.nextLine().trim();
+            String input = sc.nextLine();
             if (input.isEmpty()) continue;
 
             if (input.equals("exit")) {
@@ -23,18 +23,28 @@ public class Main {
 
             boolean inSingle = false;
             boolean inDouble = false;
+            boolean escape = false;
 
-            char[] arr = input.toCharArray();
+            for (int i = 0; i < input.length(); i++) {
+                char c = input.charAt(i);
 
-            for (int i = 0; i < arr.length; i++) {
-                char c = arr[i];
+                if (!inSingle && !inDouble && escape) {
+                    sb.append(c);
+                    escape = false;
+                    continue;
+                }
 
-                if (c == '\'' && !inDouble) {
+                if (!inSingle && !inDouble && c == '\\') {
+                    escape = true;
+                    continue;
+                }
+
+                if (c == '\'' && !inDouble && !escape) {
                     inSingle = !inSingle;
                     continue;
                 }
 
-                if (c == '"' && !inSingle) {
+                if (c == '"' && !inSingle && !escape) {
                     inDouble = !inDouble;
                     continue;
                 }
