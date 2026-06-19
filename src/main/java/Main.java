@@ -267,111 +267,135 @@ public class Main {
         boolean leftIsBuiltin = isBuiltin(leftCmd.get(0));
         boolean rightIsBuiltin = isBuiltin(rightCmd.get(0));
 
-        if (!leftIsBuiltin && !rightIsBuiltin) {
-            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd).directory(new File(currentDir));
-            ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
-
-            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
-            if (errFile != null) {
-                File targetErrFile = new File(errFile);
-                if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-                pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
-            } else {
-                pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            if (outFile != null) {
-                File targetFile = new File(outFile);
-                if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-                pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-            } else {
-                pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            List<Process> pipeline = ProcessBuilder.startPipeline(List.of(pbLeft, pbRight));
-            for (Process p : pipeline) {
-                p.waitFor();
-            }
-            return currentDir;
-        }
-
-        ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
-        ByteArrayOutputStream leftErr = new ByteArrayOutputStream();
-
         if (leftIsBuiltin) {
+            ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
+            ByteArrayOutputStream leftErr = new ByteArrayOutputStream();
             executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, leftErr, currentDir);
             if (leftErr.size() > 0) {
                 System.err.print(leftErr.toString());
             }
-        } else {
-            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd);
-            pbLeft.directory(new File(currentDir));
-            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
-            Process pLeft = pbLeft.start();
+            byte[] pipeData = pipelineBuffer.toByteArray();
 
-            try (InputStream in = pLeft.getInputStream()) {
-                byte[] buf = new byte[4096];
-                int r;
-                while ((r = in.read(buf)) != -1) {
-                    pipelineBuffer.write(buf, 0, r);
+            if (rightIsBuiltin) {
+                ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
+                ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
+                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
+
+                if (outFile != null) {
+                    write(currentDir, outFile, rightOut.toString().trim(), false);
+                } else if (rightOut.size() > 0) {
+                    System.out.print(rightOut.toString());
                 }
+
+                if (errFile != null) {
+                    write(currentDir, errFile, rightErr.toString().trim(), true);
+                } else if (rightErr.size() > 0) {
+                    System.err.print(rightErr.toString());
+                }
+            } else {
+                ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
+                if (errFile != null) {
+                    File targetErrFile = new File(errFile);
+                    if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
+                    pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
+                } else {
+                    pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                if (outFile != null) {
+                    File targetFile = new File(outFile);
+                    if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
+                    pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                } else {
+                    pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                Process pRight = pbRight.start();
+                try (OutputStream out = pRight.getOutputStream()) {
+                    out.write(pipeData);
+                    out.flush();
+                }
+                pRight.waitFor();
             }
-            pLeft.waitFor();
+        } else {
+            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd).directory(new File(currentDir));
+            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+            if (rightIsBuiltin) {
+                Process pLeft = pbLeft.start();
+                ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
+                try (InputStream in = pLeft.getInputStream()) {
+                    byte[] buf = new byte[4096];
+                    int r;
+                    while ((r = in.read(buf)) != -1) {
+                        pipelineBuffer.write(buf, 0, r);
+                    }
+                }
+                pLeft.waitFor();
+
+                byte[] pipeData = pipelineBuffer.toByteArray();
+                ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
+                ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
+                executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
+
+                if (outFile != null) {
+                    write(currentDir, outFile, rightOut.toString().trim(), false);
+                } else if (rightOut.size() > 0) {
+                    System.out.print(rightOut.toString());
+                }
+
+                if (errFile != null) {
+                    write(currentDir, errFile, rightErr.toString().trim(), true);
+                } else if (rightErr.size() > 0) {
+                    System.err.print(rightErr.toString());
+                }
+            } else {
+                ProcessBuilder pbRight = new ProcessBuilder(rightCmd).directory(new File(currentDir));
+                if (errFile != null) {
+                    File targetErrFile = new File(errFile);
+                    if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
+                    pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
+                } else {
+                    pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                if (outFile != null) {
+                    File targetFile = new File(outFile);
+                    if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
+                    pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                } else {
+                    pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                }
+
+                Process pLeft = pbLeft.start();
+                Process pRight = pbRight.start();
+
+                Thread copyThread = new Thread(() -> {
+                    try (InputStream in = pLeft.getInputStream();
+                         OutputStream out = pRight.getOutputStream()) {
+                        byte[] buffer = new byte[4096];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                            out.flush();
+                        }
+                    } catch (Exception e) {
+                    }
+                });
+                copyThread.start();
+
+                pLeft.waitFor();
+                pRight.waitFor();
+                copyThread.join();
+            }
         }
 
-        byte[] pipeData = pipelineBuffer.toByteArray();
-
-        if (rightIsBuiltin) {
-            ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
-            ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
-            executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
-
-            if (outFile != null) {
-                write(currentDir, outFile, rightOut.toString().trim(), false);
-            } else if (rightOut.size() > 0) {
-                System.out.print(rightOut.toString());
-            }
-
-            if (errFile != null) {
-                write(currentDir, errFile, rightErr.toString().trim(), true);
-            } else if (rightErr.size() > 0) {
-                System.err.print(rightErr.toString());
-            }
-
-            if (rightCmd.get(0).equals("cd") && rightErr.size() == 0) {
-                String path = rightCmd.size() > 1 ? rightCmd.get(1) : "";
-                if (path.equals("~")) path = System.getenv("HOME");
-                File f = new File(path);
-                if (!f.isAbsolute()) f = new File(currentDir, path);
-                currentDir = f.getCanonicalPath();
-            }
-        } else {
-            ProcessBuilder pbRight = new ProcessBuilder(rightCmd);
-            pbRight.directory(new File(currentDir));
-
-            if (errFile != null) {
-                File targetErrFile = new File(errFile);
-                if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-                pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
-            } else {
-                pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            if (outFile != null) {
-                File targetFile = new File(outFile);
-                if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-                pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-            } else {
-                pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-            }
-
-            Process pRight = pbRight.start();
-            try (OutputStream out = pRight.getOutputStream()) {
-                out.write(pipeData);
-                out.flush();
-            } catch (Exception e) {
-            }
-            pRight.waitFor();
+        if (rightCmd.get(0).equals("cd") && !rightIsBuiltin) {
+            String path = rightCmd.size() > 1 ? rightCmd.get(1) : "";
+            if (path.equals("~")) path = System.getenv("HOME");
+            File f = new File(path);
+            if (!f.isAbsolute()) f = new File(currentDir, path);
+            if (f.exists() && f.isDirectory()) currentDir = f.getCanonicalPath();
         }
 
         return currentDir;
