@@ -169,18 +169,28 @@ public class Main {
                 }
 
                 Iterator<BackgroundJob> it = activeJobs.iterator();
-                StringBuilder jobsOutput = new StringBuilder();
                 while (it.hasNext()) {
                     BackgroundJob job = it.next();
                     if (!job.process.isAlive()) {
                         it.remove();
-                    } else {
-                        if (targetId == -1 || job.id == targetId) {
-                            jobsOutput.append("[").append(job.id).append("]+  Running                 ")
-                                      .append(job.commandStr).append(" &\n");
-                        }
                     }
                 }
+
+                StringBuilder jobsOutput = new StringBuilder();
+                for (int j = 0; j < activeJobs.size(); j++) {
+                    BackgroundJob job = activeJobs.get(j);
+                    if (targetId == -1 || job.id == targetId) {
+                        String sign = " ";
+                        if (j == activeJobs.size() - 1) {
+                            sign = "+";
+                        } else if (j == activeJobs.size() - 2) {
+                            sign = "-";
+                        }
+                        jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Running                 ")
+                                  .append(job.commandStr).append(" &\n");
+                    }
+                }
+
                 if (jobsOutput.length() > 0) {
                     write(currentDir, outFile, jobsOutput.toString().trim(), false);
                 }
