@@ -21,25 +21,9 @@ public class Main {
 
             boolean inSingle = false;
             boolean inDouble = false;
-            boolean escape = false;
 
             for (int i = 0; i < input.length(); i++) {
                 char c = input.charAt(i);
-
-                if (inDouble && escape) {
-                    if (c == '\\' || c == '"' || c == '$' || c == '`') {
-                        sb.append(c);
-                    } else {
-                        sb.append('\\').append(c);
-                    }
-                    escape = false;
-                    continue;
-                }
-
-                if (inDouble && c == '\\') {
-                    escape = true;
-                    continue;
-                }
 
                 if (inSingle) {
                     if (c == '\'') {
@@ -50,28 +34,50 @@ public class Main {
                     continue;
                 }
 
-                if (!inDouble && !inSingle && c == '\\') {
-                    escape = true;
-                    continue;
-                }
+                if (inDouble) {
+                    if (c == '\\') {
+                        if (i + 1 < input.length()) {
+                            char n = input.charAt(i + 1);
+                            if (n == '"' || n == '\\' || n == '$' || n == '`') {
+                                sb.append(n);
+                                i++;
+                            } else {
+                                sb.append('\\');
+                            }
+                        } else {
+                            sb.append('\\');
+                        }
+                        continue;
+                    }
 
-                if (escape) {
+                    if (c == '"') {
+                        inDouble = false;
+                        continue;
+                    }
+
                     sb.append(c);
-                    escape = false;
                     continue;
                 }
 
-                if (c == '\'' && !inDouble) {
+                if (c == '\'') {
                     inSingle = true;
                     continue;
                 }
 
-                if (c == '"' && !inSingle) {
+                if (c == '"') {
                     inDouble = true;
                     continue;
                 }
 
-                if (!inSingle && !inDouble && c == ' ') {
+                if (c == '\\') {
+                    if (i + 1 < input.length()) {
+                        sb.append(input.charAt(i + 1));
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (c == ' ') {
                     if (sb.length() > 0) {
                         tokens.add(sb.toString());
                         sb.setLength(0);
@@ -81,10 +87,7 @@ public class Main {
                 }
             }
 
-            if (sb.length() > 0) {
-                tokens.add(sb.toString());
-            }
-
+            if (sb.length() > 0) tokens.add(sb.toString());
             if (tokens.isEmpty()) continue;
 
             String command = tokens.get(0);
@@ -131,18 +134,18 @@ public class Main {
             else if (command.equals("type")) {
                 String cmdName = tokens.get(1);
 
-                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type") || cmdName.equals("pwd") || cmdName.equals("cd")) {
+                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type") ||
+                    cmdName.equals("pwd") || cmdName.equals("cd")) {
                     System.out.println(cmdName + " is a shell builtin");
                 } else {
                     String pathEnv = System.getenv("PATH");
                     String[] paths = pathEnv.split(":");
                     boolean found = false;
 
-                    for (String path : paths) {
-                        File file = new File(path, cmdName);
-
-                        if (file.exists() && file.canExecute()) {
-                            System.out.println(cmdName + " is " + file.getAbsolutePath());
+                    for (String p : paths) {
+                        File f = new File(p, cmdName);
+                        if (f.exists() && f.canExecute()) {
+                            System.out.println(cmdName + " is " + f.getAbsolutePath());
                             found = true;
                             break;
                         }
