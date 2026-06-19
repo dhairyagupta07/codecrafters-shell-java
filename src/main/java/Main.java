@@ -91,14 +91,20 @@ public class Main {
             ArrayList<String> cmdTokens = new ArrayList<>();
             String outFile = null;
             String errFile = null;
+            boolean appendOut = false;
 
-            // TRACK BOTH REDIRECTIONS
             for (int i = 0; i < tokens.size(); i++) {
                 String t = tokens.get(i);
 
                 if (t.equals(">") || t.equals("1>")) {
                     if (i + 1 < tokens.size()) {
                         outFile = tokens.get(i + 1);
+                    }
+                    break;
+                } else if (t.equals(">>") || t.equals("1>>")) {
+                    if (i + 1 < tokens.size()) {
+                        outFile = tokens.get(i + 1);
+                        appendOut = true;
                     }
                     break;
                 } else if (t.equals("2>")) {
@@ -112,17 +118,15 @@ public class Main {
 
             if (cmdTokens.isEmpty()) continue;
 
-            // CRITICAL FIX: Touch/create the redirection files immediately if they are defined
             if (outFile != null) {
-                createEmptyFile(currentDir, outFile);
+                createOrPrepareFile(currentDir, outFile, appendOut);
             }
             if (errFile != null) {
-                createEmptyFile(currentDir, errFile);
+                createOrPrepareFile(currentDir, errFile, false);
             }
 
             String command = cmdTokens.get(0);
 
-            // HANDLE BUILTINS
             if (command.equals("echo")) {
                 String output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
                 write(currentDir, outFile, output, false);
@@ -178,24 +182,25 @@ public class Main {
                 }
             }
 
-            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
                     pb.directory(new File(currentDir));
 
-                    // Setup stdout redirection
                     if (outFile != null) {
                         File targetFile = new File(outFile);
                         if (!targetFile.isAbsolute()) {
                             targetFile = new File(currentDir, outFile);
                         }
-                        pb.redirectOutput(targetFile);
+                        if (appendOut) {
+                            pb.redirectOutput(ProcessBuilder.Redirect.appendTo(targetFile));
+                        } else {
+                            pb.redirectOutput(targetFile);
+                        }
                     } else {
                         pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                     }
 
-                    // Setup stderr redirection
                     if (errFile != null) {
                         File targetErrFile = new File(errFile);
                         if (!targetErrFile.isAbsolute()) {
@@ -218,18 +223,21 @@ public class Main {
         sc.close();
     }
 
-    // Safely ensures a file exists (and clears it) when a redirection token is used
-    private static void createEmptyFile(String dir, String file) throws Exception {
+    private static void createOrPrepareFile(String dir, String file, boolean append) throws Exception {
         File targetFile = new File(file);
         if (!targetFile.isAbsolute()) {
             targetFile = new File(dir, file);
         }
-        // Ensure parent directories exist
         if (targetFile.getParentFile() != null) {
             targetFile.getParentFile().mkdirs();
         }
-        // Opening and closing a FileOutputStream truncates or creates the file
-        new FileOutputStream(targetFile).close();
+        if (!append) {
+            new FileOutputStream(targetFile).close();
+        } else {
+            if (!targetFile.exists()) {
+                targetFile.createNewFile();
+            }
+        }
     }
 
     private static void write(String dir, String file, String output, boolean isStderr) throws Exception {
@@ -240,7 +248,6 @@ public class Main {
             if (!targetFile.isAbsolute()) {
                 targetFile = new File(dir, file);
             }
-            // Use append mode here (true) since the file was already truncated/created earlier
             FileOutputStream fos = new FileOutputStream(targetFile, true);
             fos.write(formattedOutput.getBytes());
             fos.close();
