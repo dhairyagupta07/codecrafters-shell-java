@@ -14,7 +14,6 @@ public class Main {
 
             String input = sc.nextLine();
             if (input.isEmpty()) continue;
-
             if (input.equals("exit")) break;
 
             ArrayList<String> tokens = new ArrayList<>();
@@ -88,29 +87,32 @@ public class Main {
             if (sb.length() > 0) tokens.add(sb.toString());
             if (tokens.isEmpty()) continue;
 
-            // REDIRECTION PARSE
+            // SAFE REDIRECTION PARSING
             ArrayList<String> cmdTokens = new ArrayList<>();
             String outFile = null;
 
             for (int i = 0; i < tokens.size(); i++) {
                 if (tokens.get(i).equals(">")) {
-                    outFile = tokens.get(i + 1);
+                    if (i + 1 < tokens.size()) {
+                        outFile = tokens.get(i + 1);
+                    }
                     break;
                 }
                 cmdTokens.add(tokens.get(i));
             }
 
+            if (cmdTokens.isEmpty()) continue;
+
             String command = cmdTokens.get(0);
 
+            // BUILTINS
             if (command.equals("echo")) {
                 String output = cmdTokens.size() > 1
                         ? String.join(" ", cmdTokens.subList(1, cmdTokens.size()))
                         : "";
 
                 if (outFile != null) {
-                    FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
-                    fos.write(output.getBytes());
-                    fos.close();
+                    writeFile(currentDir, outFile, output);
                 } else {
                     System.out.println(output);
                 }
@@ -120,9 +122,7 @@ public class Main {
                 String output = currentDir;
 
                 if (outFile != null) {
-                    FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
-                    fos.write(output.getBytes());
-                    fos.close();
+                    writeFile(currentDir, outFile, output);
                 } else {
                     System.out.println(output);
                 }
@@ -130,7 +130,6 @@ public class Main {
 
             else if (command.equals("cd")) {
                 String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
-
                 if (path.equals("~")) path = System.getenv("HOME");
 
                 File newDir = new File(path);
@@ -139,11 +138,11 @@ public class Main {
                 }
 
                 try {
-                    String canonicalPath = newDir.getCanonicalPath();
-                    File finalDir = new File(canonicalPath);
+                    String canonical = newDir.getCanonicalPath();
+                    File f = new File(canonical);
 
-                    if (finalDir.exists() && finalDir.isDirectory()) {
-                        currentDir = canonicalPath;
+                    if (f.exists() && f.isDirectory()) {
+                        currentDir = canonical;
                     } else {
                         System.out.println("cd: " + path + ": No such file or directory");
                     }
@@ -155,12 +154,11 @@ public class Main {
             else if (command.equals("type")) {
                 String cmdName = cmdTokens.get(1);
 
-                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type")
-                        || cmdName.equals("pwd") || cmdName.equals("cd")) {
+                if (cmdName.equals("echo") || cmdName.equals("exit") ||
+                    cmdName.equals("type") || cmdName.equals("pwd") || cmdName.equals("cd")) {
                     System.out.println(cmdName + " is a shell builtin");
                 } else {
-                    String pathEnv = System.getenv("PATH");
-                    String[] paths = pathEnv.split(":");
+                    String[] paths = System.getenv("PATH").split(":");
                     boolean found = false;
 
                     for (String p : paths) {
@@ -178,6 +176,7 @@ public class Main {
                 }
             }
 
+            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -189,14 +188,20 @@ public class Main {
                         pb.inheritIO();
                     }
 
-                    Process process = pb.start();
-                    process.waitFor();
+                    Process p = pb.start();
+                    p.waitFor();
                 } catch (Exception e) {
-                    System.out.println(cmdTokens.get(0) + ": command not found");
+                    System.out.println(command + ": command not found");
                 }
             }
         }
 
         sc.close();
+    }
+
+    private static void writeFile(String dir, String file, String content) throws Exception {
+        FileOutputStream fos = new FileOutputStream(new File(dir, file));
+        fos.write(content.getBytes());
+        fos.close();
     }
 }
