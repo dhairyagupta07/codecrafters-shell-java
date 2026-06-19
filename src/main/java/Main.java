@@ -1,10 +1,10 @@
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
-
         String currentDir = System.getProperty("user.dir");
 
         while (true) {
@@ -14,33 +14,58 @@ public class Main {
             String input = sc.nextLine().trim();
             if (input.isEmpty()) continue;
 
-            String[] parts = input.split(" ");
-            String command = parts[0];
-
-            // ---------------- EXIT ----------------
-            if (command.equals("exit")) {
+            if (input.equals("exit")) {
                 break;
             }
 
-            // ---------------- ECHO ----------------
-            else if (command.equals("echo")) {
-                if (parts.length > 1) {
-                    System.out.println(input.substring(5));
+            String command;
+            ArrayList<String> tokens = new ArrayList<>();
+
+            char[] arr = input.toCharArray();
+            StringBuilder sb = new StringBuilder();
+            boolean inSingle = false;
+
+            for (int i = 0; i < arr.length; i++) {
+                char c = arr[i];
+
+                if (c == '\'') {
+                    inSingle = !inSingle;
+                    continue;
+                }
+
+                if (!inSingle && c == ' ') {
+                    if (sb.length() > 0) {
+                        tokens.add(sb.toString());
+                        sb.setLength(0);
+                    }
+                } else {
+                    sb.append(c);
+                }
+            }
+
+            if (sb.length() > 0) {
+                tokens.add(sb.toString());
+            }
+
+            if (tokens.size() == 0) continue;
+
+            command = tokens.get(0);
+
+            if (command.equals("echo")) {
+                if (tokens.size() > 1) {
+                    System.out.println(String.join(" ", tokens.subList(1, tokens.size())));
                 } else {
                     System.out.println();
                 }
             }
 
-            // ---------------- PWD ----------------
             else if (command.equals("pwd")) {
                 System.out.println(currentDir);
             }
 
-            // ---------------- CD ----------------
             else if (command.equals("cd")) {
-                String path = parts.length > 1 ? parts[1] : "";
+                String path = tokens.size() > 1 ? tokens.get(1) : "";
 
-                // ⭐ HOME directory support
                 if (path.equals("~")) {
                     path = System.getenv("HOME");
                 }
@@ -58,29 +83,21 @@ public class Main {
                     if (finalDir.exists() && finalDir.isDirectory()) {
                         currentDir = canonicalPath;
                     } else {
-                        System.out.println("cd: " + parts[1] + ": No such file or directory");
+                        System.out.println("cd: " + path + ": No such file or directory");
                     }
                 } catch (Exception e) {
-                    System.out.println("cd: " + parts[1] + ": No such file or directory");
+                    System.out.println("cd: " + path + ": No such file or directory");
                 }
             }
 
-            // ---------------- TYPE ----------------
             else if (command.equals("type")) {
-                String cmdName = parts[1];
+                String cmdName = tokens.get(1);
 
-                if (cmdName.equals("echo") ||
-                    cmdName.equals("exit") ||
-                    cmdName.equals("type") ||
-                    cmdName.equals("pwd") ||
-                    cmdName.equals("cd")) {
-
+                if (cmdName.equals("echo") || cmdName.equals("exit") || cmdName.equals("type") || cmdName.equals("pwd") || cmdName.equals("cd")) {
                     System.out.println(cmdName + " is a shell builtin");
-
                 } else {
                     String pathEnv = System.getenv("PATH");
                     String[] paths = pathEnv.split(":");
-
                     boolean found = false;
 
                     for (String path : paths) {
@@ -99,16 +116,13 @@ public class Main {
                 }
             }
 
-            // ---------------- RUN PROGRAM ----------------
             else {
                 try {
-                    ProcessBuilder pb = new ProcessBuilder(parts);
+                    ProcessBuilder pb = new ProcessBuilder(tokens);
                     pb.directory(new File(currentDir));
                     pb.inheritIO();
-
                     Process process = pb.start();
                     process.waitFor();
-
                 } catch (Exception e) {
                     System.out.println(input + ": command not found");
                 }
