@@ -1,7 +1,10 @@
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -122,7 +125,7 @@ public class Main {
             if (pipeIndex != -1) {
                 List<String> leftTokens = tokens.subList(0, pipeIndex);
                 List<String> rightTokens = tokens.subList(pipeIndex + 1, tokens.size());
-                handlePipeline(leftTokens, rightTokens, currentDir);
+                currentDir = handlePipelineWithBuiltins(leftTokens, rightTokens, currentDir);
                 continue;
             }
 
@@ -143,26 +146,16 @@ public class Main {
             String t = tokens.get(i);
 
             if (t.equals(">") || t.equals("1>")) {
-                if (i + 1 < tokens.size()) {
-                    outFile = tokens.get(i + 1);
-                }
+                if (i + 1 < tokens.size()) outFile = tokens.get(i + 1);
                 break;
             } else if (t.equals(">>") || t.equals("1>>")) {
-                if (i + 1 < tokens.size()) {
-                    outFile = tokens.get(i + 1);
-                    appendOut = true;
-                }
+                if (i + 1 < tokens.size()) { outFile = tokens.get(i + 1); appendOut = true; }
                 break;
             } else if (t.equals("2>")) {
-                if (i + 1 < tokens.size()) {
-                    errFile = tokens.get(i + 1);
-                }
+                if (i + 1 < tokens.size()) errFile = tokens.get(i + 1);
                 break;
             } else if (t.equals("2>>")) {
-                if (i + 1 < tokens.size()) {
-                    errFile = tokens.get(i + 1);
-                    appendErr = true;
-                }
+                if (i + 1 < tokens.size()) { errFile = tokens.get(i + 1); appendErr = true; }
                 break;
             }
             cmdTokens.add(t);
@@ -175,17 +168,30 @@ public class Main {
 
         String command = cmdTokens.get(0);
 
-        if (command.equals("jobs")) {
-            executeJobsBuiltin(cmdTokens, outFile, currentDir);
-        } else if (command.equals("echo")) {
-            String output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
-            write(currentDir, outFile, output, false);
-        } else if (command.equals("pwd")) {
-            write(currentDir, outFile, currentDir, false);
-        } else if (command.equals("cd")) {
-            currentDir = executeCdBuiltin(cmdTokens, errFile, currentDir);
-        } else if (command.equals("type")) {
-            executeTypeBuiltin(cmdTokens, outFile, currentDir);
+        if (isBuiltin(command)) {
+            ByteArrayOutputStream outCapture = new ByteArrayOutputStream();
+            ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
+            executeBuiltin(cmdTokens, new ByteArrayInputStream(new byte[0]), outCapture, errCapture, currentDir);
+            
+            if (outFile != null) {
+                write(currentDir, outFile, outCapture.toString().trim(), false);
+            } else if (outCapture.size() > 0) {
+                System.out.print(outCapture.toString());
+            }
+            
+            if (errFile != null) {
+                write(currentDir, errFile, errCapture.toString().trim(), true);
+            } else if (errCapture.size() > 0) {
+                System.err.print(errCapture.toString());
+            }
+
+            if (command.equals("cd") && errCapture.size() == 0) {
+                String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
+                if (path.equals("~")) path = System.getenv("HOME");
+                File f = new File(path);
+                if (!f.isAbsolute()) f = new File(currentDir, path);
+                currentDir = f.getCanonicalPath();
+            }
         } else {
             try {
                 ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -224,7 +230,7 @@ public class Main {
         return currentDir;
     }
 
-    private static void handlePipeline(List<String> left, List<String> right, String currentDir) throws Exception {
+    private static String handlePipelineWithBuiltins(List<String> left, List<String> right, String currentDir) throws Exception {
         ArrayList<String> leftCmd = new ArrayList<>();
         for (String t : left) {
             if (t.equals(">") || t.equals("1>") || t.equals(">>") || t.equals("1>>") || t.equals("2>") || t.equals("2>>")) break;
@@ -258,124 +264,160 @@ public class Main {
         if (outFile != null) createOrPrepareFile(currentDir, outFile, appendOut);
         if (errFile != null) createOrPrepareFile(currentDir, errFile, appendErr);
 
-        ProcessBuilder pbLeft = new ProcessBuilder(leftCmd);
-        pbLeft.directory(new File(currentDir));
+        ByteArrayOutputStream pipelineBuffer = new ByteArrayOutputStream();
+        ByteArrayOutputStream leftErr = new ByteArrayOutputStream();
 
-        ProcessBuilder pbRight = new ProcessBuilder(rightCmd);
-        pbRight.directory(new File(currentDir));
-
-        pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
-        if (errFile != null) {
-            File targetErrFile = new File(errFile);
-            if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
-            pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
+        boolean leftIsBuiltin = isBuiltin(leftCmd.get(0));
+        if (leftIsBuiltin) {
+            executeBuiltin(leftCmd, new ByteArrayInputStream(new byte[0]), pipelineBuffer, leftErr, currentDir);
+            if (leftErr.size() > 0) {
+                System.err.print(leftErr.toString());
+            }
         } else {
-            pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
-        }
+            ProcessBuilder pbLeft = new ProcessBuilder(leftCmd);
+            pbLeft.directory(new File(currentDir));
+            pbLeft.redirectError(ProcessBuilder.Redirect.INHERIT);
+            Process pLeft = pbLeft.start();
 
-        if (outFile != null) {
-            File targetFile = new File(outFile);
-            if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
-            pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
-        } else {
-            pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-        }
-
-        Process pLeft = pbLeft.start();
-        Process pRight = pbRight.start();
-
-        try (InputStream in = pLeft.getInputStream();
-             OutputStream out = pRight.getOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                try {
-                    out.write(buffer, 0, read);
-                    out.flush();
-                } catch (Exception e) {
-                    break;
+            try (InputStream in = pLeft.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int r;
+                while ((r = in.read(buf)) != -1) {
+                    pipelineBuffer.write(buf, 0, r);
                 }
             }
+            pLeft.waitFor();
         }
 
-        pLeft.destroy();
-        pRight.waitFor();
-    }
+        byte[] pipeData = pipelineBuffer.toByteArray();
+        boolean rightIsBuiltin = isBuiltin(rightCmd.get(0));
 
-    private static void executeJobsBuiltin(List<String> cmdTokens, String outFile, String currentDir) throws Exception {
-        int targetId = -1;
-        if (cmdTokens.size() > 1 && cmdTokens.get(1).startsWith("%")) {
-            try { targetId = Integer.parseInt(cmdTokens.get(1).substring(1)); } catch (NumberFormatException e) {}
-        }
+        if (rightIsBuiltin) {
+            ByteArrayOutputStream rightOut = new ByteArrayOutputStream();
+            ByteArrayOutputStream rightErr = new ByteArrayOutputStream();
+            executeBuiltin(rightCmd, new ByteArrayInputStream(pipeData), rightOut, rightErr, currentDir);
 
-        StringBuilder jobsOutput = new StringBuilder();
-        Iterator<BackgroundJob> it = activeJobs.iterator();
-        int count = 0;
-        int total = activeJobs.size();
-
-        while (it.hasNext()) {
-            BackgroundJob job = it.next();
-            count++;
-            if (targetId == -1 || job.id == targetId) {
-                String sign = " ";
-                if (count == total) sign = "+";
-                else if (count == total - 1) sign = "-";
-                
-                if (!job.process.isAlive()) {
-                    jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Done                    ").append(job.commandStr).append("\n");
-                    it.remove();
-                } else {
-                    jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Running                 ").append(job.commandStr).append(" &\n");
-                }
-            } else if (!job.process.isAlive()) {
-                it.remove();
+            if (outFile != null) {
+                write(currentDir, outFile, rightOut.toString().trim(), false);
+            } else if (rightOut.size() > 0) {
+                System.out.print(rightOut.toString());
             }
-        }
 
-        if (jobsOutput.length() > 0) {
-            write(currentDir, outFile, jobsOutput.toString().trim(), false);
-        }
-    }
+            if (errFile != null) {
+                write(currentDir, errFile, rightErr.toString().trim(), true);
+            } else if (rightErr.size() > 0) {
+                System.err.print(rightErr.toString());
+            }
 
-    private static String executeCdBuiltin(List<String> cmdTokens, String errFile, String currentDir) throws Exception {
-        String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
-        if (path.equals("~")) path = System.getenv("HOME");
+            if (rightCmd.get(0).equals("cd") && rightErr.size() == 0) {
+                String path = rightCmd.size() > 1 ? rightCmd.get(1) : "";
+                if (path.equals("~")) path = System.getenv("HOME");
+                File f = new File(path);
+                if (!f.isAbsolute()) f = new File(currentDir, path);
+                currentDir = f.getCanonicalPath();
+            }
+        } else {
+            ProcessBuilder pbRight = new ProcessBuilder(rightCmd);
+            pbRight.directory(new File(currentDir));
 
-        File f = new File(path);
-        if (!f.isAbsolute()) f = new File(currentDir, path);
-
-        try {
-            String canon = f.getCanonicalPath();
-            File real = new File(canon);
-            if (real.exists() && real.isDirectory()) {
-                System.setProperty("user.dir", canon);
-                return canon;
+            if (errFile != null) {
+                File targetErrFile = new File(errFile);
+                if (!targetErrFile.isAbsolute()) targetErrFile = new File(currentDir, errFile);
+                pbRight.redirectError(appendErr ? ProcessBuilder.Redirect.appendTo(targetErrFile) : ProcessBuilder.Redirect.to(targetErrFile));
             } else {
-                write(currentDir, errFile, "cd: " + path + ": No such file or directory", true);
+                pbRight.redirectError(ProcessBuilder.Redirect.INHERIT);
             }
-        } catch (Exception e) {
-            write(currentDir, errFile, "cd: " + path + ": No such file or directory", true);
+
+            if (outFile != null) {
+                File targetFile = new File(outFile);
+                if (!targetFile.isAbsolute()) targetFile = new File(currentDir, outFile);
+                pbRight.redirectOutput(appendOut ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+            } else {
+                pbRight.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            Process pRight = pbRight.start();
+            try (OutputStream out = pRight.getOutputStream()) {
+                out.write(pipeData);
+                out.flush();
+            } catch (Exception e) {
+            }
+            pRight.waitFor();
         }
+
         return currentDir;
     }
 
-    private static void executeTypeBuiltin(List<String> cmdTokens, String outFile, String currentDir) throws Exception {
-        String name = cmdTokens.get(1);
-        if (name.equals("echo") || name.equals("pwd") || name.equals("cd") || name.equals("type") || name.equals("exit") || name.equals("jobs")) {
-            write(currentDir, outFile, name + " is a shell builtin", false);
-        } else {
-            String[] paths = System.getenv("PATH").split(":");
-            boolean found = false;
-            for (String p : paths) {
-                File f = new File(p, name);
-                if (f.exists() && f.canExecute()) {
-                    write(currentDir, outFile, name + " is " + f.getAbsolutePath(), false);
-                    found = true;
-                    break;
+    private static boolean isBuiltin(String cmd) {
+        return cmd.equals("echo") || cmd.equals("pwd") || cmd.equals("cd") || cmd.equals("type") || cmd.equals("jobs");
+    }
+
+    private static void executeBuiltin(List<String> cmdTokens, InputStream stdin, OutputStream stdout, OutputStream stderr, String currentDir) throws Exception {
+        PrintStream out = new PrintStream(stdout);
+        PrintStream err = new PrintStream(stderr);
+        String command = cmdTokens.get(0);
+
+        if (command.equals("jobs")) {
+            int targetId = -1;
+            if (cmdTokens.size() > 1 && cmdTokens.get(1).startsWith("%")) {
+                try { targetId = Integer.parseInt(cmdTokens.get(1).substring(1)); } catch (NumberFormatException e) {}
+            }
+            int count = 0;
+            int total = activeJobs.size();
+            Iterator<BackgroundJob> it = activeJobs.iterator();
+            while (it.hasNext()) {
+                BackgroundJob job = it.next();
+                count++;
+                if (targetId == -1 || job.id == targetId) {
+                    String sign = " ";
+                    if (count == total) sign = "+";
+                    else if (count == total - 1) sign = "-";
+                    
+                    if (!job.process.isAlive()) {
+                        out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
+                        it.remove();
+                    } else {
+                        out.println("[" + job.id + "]" + sign + "  Running                 " + job.commandStr + " &");
+                    }
+                } else if (!job.process.isAlive()) {
+                    it.remove();
                 }
             }
-            if (!found) write(currentDir, outFile, name + ": not found", false);
+        } else if (command.equals("echo")) {
+            String output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
+            out.println(output);
+        } else if (command.equals("pwd")) {
+            out.println(currentDir);
+        } else if (command.equals("cd")) {
+            String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
+            if (path.equals("~")) path = System.getenv("HOME");
+            File f = new File(path);
+            if (!f.isAbsolute()) f = new File(currentDir, path);
+            if (f.exists() && f.isDirectory()) {
+                System.setProperty("user.dir", f.getCanonicalPath());
+            } else {
+                err.println("cd: " + path + ": No such file or directory");
+            }
+        } else if (command.equals("type")) {
+            String name = cmdTokens.get(1);
+            if (isBuiltin(name) || name.equals("exit")) {
+                out.println(name + " is a shell builtin");
+            } else {
+                String[] paths = System.getenv("PATH").split(":");
+                boolean found = false;
+                for (String p : paths) {
+                    File f = new File(p, name);
+                    if (f.exists() && f.canExecute()) {
+                        out.println(name + " is " + f.getAbsolutePath());
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) out.println(name + ": not found");
+            }
         }
+        out.flush();
+        err.flush();
     }
 
     private static int getLowestAvailableJobId() {
