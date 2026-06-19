@@ -318,23 +318,30 @@ public class Main {
 
     private static void reapCompletedJobs() {
         Iterator<BackgroundJob> it = activeJobs.iterator();
-        int count = 0;
-        int total = activeJobs.size();
+        List<BackgroundJob> finished = new ArrayList<>();
         
         while (it.hasNext()) {
             BackgroundJob job = it.next();
-            count++;
             if (!job.process.isAlive()) {
-                String sign = " ";
-                if (count == total) {
-                    sign = "+";
-                } else if (count == total - 1) {
-                    sign = "-";
-                }
-                System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
-                System.out.flush();
+                finished.add(job);
                 it.remove();
             }
+        }
+
+        int totalActive = activeJobs.size();
+        for (int i = 0; i < finished.size(); i++) {
+            BackgroundJob job = finished.get(i);
+            String sign = " ";
+            int virtualIndex = totalActive + i;
+            
+            if (virtualIndex == totalActive + finished.size() - 1) {
+                sign = "+";
+            } else if (virtualIndex == totalActive + finished.size() - 2) {
+                sign = "-";
+            }
+            
+            System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
+            System.out.flush();
         }
     }
 
