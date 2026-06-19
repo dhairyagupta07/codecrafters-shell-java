@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Scanner;
 
 public class Main {
+
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
         String currentDir = System.getProperty("user.dir");
@@ -13,10 +14,8 @@ public class Main {
             System.out.flush();
 
             String input = sc.nextLine();
-            if (input.isEmpty())
-                continue;
-            if (input.equals("exit"))
-                break;
+            if (input.isEmpty()) continue;
+            if (input.equals("exit")) break;
 
             ArrayList<String> tokens = new ArrayList<>();
             StringBuilder sb = new StringBuilder();
@@ -28,10 +27,8 @@ public class Main {
                 char c = input.charAt(i);
 
                 if (inSingle) {
-                    if (c == '\'')
-                        inSingle = false;
-                    else
-                        sb.append(c);
+                    if (c == '\'') inSingle = false;
+                    else sb.append(c);
                     continue;
                 }
 
@@ -88,10 +85,8 @@ public class Main {
                 }
             }
 
-            if (sb.length() > 0)
-                tokens.add(sb.toString());
-            if (tokens.isEmpty())
-                continue;
+            if (sb.length() > 0) tokens.add(sb.toString());
+            if (tokens.isEmpty()) continue;
 
             ArrayList<String> cmdTokens = new ArrayList<>();
             String outFile = null;
@@ -105,60 +100,29 @@ public class Main {
                     }
                     break;
                 }
-
                 cmdTokens.add(t);
             }
 
-            if (cmdTokens.isEmpty())
-                continue;
+            if (cmdTokens.isEmpty()) continue;
 
             String command = cmdTokens.get(0);
-            String output = null;
 
+            // HANDLE BUILTINS
             if (command.equals("echo")) {
-                output = cmdTokens.size() > 1
-                        ? String.join(" ", cmdTokens.subList(1, cmdTokens.size()))
-                        : "";
+                String output = String.join(" ", cmdTokens.subList(1, cmdTokens.size()));
+                write(currentDir, outFile, output);
             }
 
             else if (command.equals("pwd")) {
-                output = currentDir;
-            }
-
-            else if (command.equals("type")) {
-                String name = cmdTokens.get(1);
-
-                if (name.equals("echo") || name.equals("pwd") || name.equals("cd") ||
-                        name.equals("type") || name.equals("exit")) {
-                    output = name + " is a shell builtin";
-                } else {
-                    String[] paths = System.getenv("PATH").split(":");
-                    boolean found = false;
-
-                    for (String p : paths) {
-                        File f = new File(p, name);
-                        if (f.exists() && f.canExecute()) {
-                            output = name + " is " + f.getAbsolutePath();
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
-                        output = name + ": not found";
-                    }
-                }
+                write(currentDir, outFile, currentDir);
             }
 
             else if (command.equals("cd")) {
                 String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
-                if (path.equals("~"))
-                    path = System.getenv("HOME");
+                if (path.equals("~")) path = System.getenv("HOME");
 
                 File f = new File(path);
-                if (!f.isAbsolute()) {
-                    f = new File(currentDir, path);
-                }
+                if (!f.isAbsolute()) f = new File(currentDir, path);
 
                 try {
                     String canon = f.getCanonicalPath();
@@ -172,10 +136,34 @@ public class Main {
                 } catch (Exception e) {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
-
-                continue;
             }
 
+            else if (command.equals("type")) {
+                String name = cmdTokens.get(1);
+
+                if (name.equals("echo") || name.equals("pwd") || name.equals("cd")
+                        || name.equals("type") || name.equals("exit")) {
+                    write(currentDir, outFile, name + " is a shell builtin");
+                } else {
+                    String[] paths = System.getenv("PATH").split(":");
+                    boolean found = false;
+
+                    for (String p : paths) {
+                        File f = new File(p, name);
+                        if (f.exists() && f.canExecute()) {
+                            write(currentDir, outFile, name + " is " + f.getAbsolutePath());
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        write(currentDir, outFile, name + ": not found");
+                    }
+                }
+            }
+
+            // EXTERNAL COMMANDS
             else {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(cmdTokens);
@@ -190,21 +178,23 @@ public class Main {
 
                     Process p = pb.start();
                     p.waitFor();
+
                 } catch (Exception e) {
                     System.out.println(command + ": command not found");
                 }
-                continue;
-            }
-
-            if (outFile != null) {
-                FileOutputStream fos = new FileOutputStream(new File(currentDir, outFile));
-                fos.write(output.getBytes());
-                fos.close();
-            } else {
-                System.out.println(output);
             }
         }
 
         sc.close();
+    }
+
+    private static void write(String dir, String file, String output) throws Exception {
+        if (file != null) {
+            FileOutputStream fos = new FileOutputStream(new File(dir, file));
+            fos.write(output.getBytes());
+            fos.close();
+        } else {
+            System.out.println(output);
+        }
     }
 }
