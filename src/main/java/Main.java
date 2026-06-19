@@ -172,17 +172,31 @@ public class Main {
                 }
 
                 StringBuilder jobsOutput = new StringBuilder();
-                for (int j = 0; j < activeJobs.size(); j++) {
-                    BackgroundJob job = activeJobs.get(j);
+                Iterator<BackgroundJob> it = activeJobs.iterator();
+                int count = 0;
+                int total = activeJobs.size();
+
+                while (it.hasNext()) {
+                    BackgroundJob job = it.next();
+                    count++;
                     if (targetId == -1 || job.id == targetId) {
                         String sign = " ";
-                        if (j == activeJobs.size() - 1) {
+                        if (count == total) {
                             sign = "+";
-                        } else if (j == activeJobs.size() - 2) {
+                        } else if (count == total - 1) {
                             sign = "-";
                         }
-                        jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Running                 ")
-                                  .append(job.commandStr).append(" &\n");
+                        
+                        if (!job.process.isAlive()) {
+                            jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Done                    ")
+                                      .append(job.commandStr).append("\n");
+                            it.remove();
+                        } else {
+                            jobsOutput.append("[").append(job.id).append("]").append(sign).append("  Running                 ")
+                                      .append(job.commandStr).append(" &\n");
+                        }
+                    } else if (!job.process.isAlive()) {
+                        it.remove();
                     }
                 }
 
@@ -317,7 +331,7 @@ public class Main {
                 } else if (count == total - 1) {
                     sign = "-";
                 }
-                System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr + " &");
+                System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr);
                 System.out.flush();
                 it.remove();
             }
