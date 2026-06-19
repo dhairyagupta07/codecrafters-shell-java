@@ -222,6 +222,8 @@ public class Main {
                     activeJobs.add(new BackgroundJob(jobId, p, rawCommandStr));
                 } else {
                     p.waitFor();
+                    System.out.flush();
+                    System.err.flush();
                 }
             } catch (Exception e) {
                 write(currentDir, errFile, command + ": command not found", true);
@@ -316,6 +318,8 @@ public class Main {
                     out.flush();
                 }
                 pRight.waitFor();
+                System.out.flush();
+                System.err.flush();
             }
         } else {
             ProcessBuilder pbLeft = new ProcessBuilder(leftCmd).directory(new File(currentDir));
@@ -387,6 +391,8 @@ public class Main {
                 pLeft.waitFor();
                 pRight.waitFor();
                 copyThread.join();
+                System.out.flush();
+                System.err.flush();
             }
         }
 
