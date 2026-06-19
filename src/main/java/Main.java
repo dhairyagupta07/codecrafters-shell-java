@@ -27,11 +27,8 @@ public class Main {
                 char c = input.charAt(i);
 
                 if (inSingle) {
-                    if (c == '\'') {
-                        inSingle = false;
-                    } else {
-                        sb.append(c);
-                    }
+                    if (c == '\'') inSingle = false;
+                    else sb.append(c);
                     continue;
                 }
 
@@ -91,8 +88,9 @@ public class Main {
             if (sb.length() > 0) tokens.add(sb.toString());
             if (tokens.isEmpty()) continue;
 
-            String outFile = null;
+            // REDIRECTION PARSE
             ArrayList<String> cmdTokens = new ArrayList<>();
+            String outFile = null;
 
             for (int i = 0; i < tokens.size(); i++) {
                 if (tokens.get(i).equals(">")) {
@@ -133,9 +131,7 @@ public class Main {
             else if (command.equals("cd")) {
                 String path = cmdTokens.size() > 1 ? cmdTokens.get(1) : "";
 
-                if (path.equals("~")) {
-                    path = System.getenv("HOME");
-                }
+                if (path.equals("~")) path = System.getenv("HOME");
 
                 File newDir = new File(path);
                 if (!newDir.isAbsolute()) {
