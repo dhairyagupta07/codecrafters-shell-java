@@ -27,9 +27,12 @@ public class Main {
         String currentDir = System.getProperty("user.dir");
 
         while (true) {
+            reapCompletedJobs();
+
             System.out.print("$ ");
             System.out.flush();
 
+            if (!sc.hasNextLine()) break;
             String input = sc.nextLine();
             if (input.isEmpty()) continue;
             if (input.equals("exit")) break;
@@ -168,14 +171,6 @@ public class Main {
                     }
                 }
 
-                Iterator<BackgroundJob> it = activeJobs.iterator();
-                while (it.hasNext()) {
-                    BackgroundJob job = it.next();
-                    if (!job.process.isAlive()) {
-                        it.remove();
-                    }
-                }
-
                 StringBuilder jobsOutput = new StringBuilder();
                 for (int j = 0; j < activeJobs.size(); j++) {
                     BackgroundJob job = activeJobs.get(j);
@@ -305,6 +300,28 @@ public class Main {
         }
 
         sc.close();
+    }
+
+    private static void reapCompletedJobs() {
+        Iterator<BackgroundJob> it = activeJobs.iterator();
+        int count = 0;
+        int total = activeJobs.size();
+        
+        while (it.hasNext()) {
+            BackgroundJob job = it.next();
+            count++;
+            if (!job.process.isAlive()) {
+                String sign = " ";
+                if (count == total) {
+                    sign = "+";
+                } else if (count == total - 1) {
+                    sign = "-";
+                }
+                System.out.println("[" + job.id + "]" + sign + "  Done                    " + job.commandStr + " &");
+                System.out.flush();
+                it.remove();
+            }
+        }
     }
 
     private static void createOrPrepareFile(String dir, String file, boolean append) throws Exception {
