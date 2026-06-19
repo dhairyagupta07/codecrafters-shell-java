@@ -176,8 +176,8 @@ public class Main {
                         it.remove();
                     } else {
                         if (targetId == -1 || job.id == targetId) {
-                            jobsOutput.append("[").append(job.id).append("] Running ")
-                                      .append(job.commandStr).append("\n");
+                            jobsOutput.append("[").append(job.id).append("]+  Running                 ")
+                                      .append(job.commandStr).append(" &\n");
                         }
                     }
                 }
