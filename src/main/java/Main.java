@@ -5,7 +5,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
-        // track current directory manually (IMPORTANT for cd)
+        // current working directory tracked manually
         String currentDir = System.getProperty("user.dir");
 
         while (true) {
@@ -47,9 +47,16 @@ public class Main {
                     newDir = new File(currentDir, path);
                 }
 
-                if (newDir.exists() && newDir.isDirectory()) {
-                    currentDir = newDir.getCanonicalPath();
-                } else {
+                try {
+                    String canonicalPath = newDir.getCanonicalPath();
+                    File finalDir = new File(canonicalPath);
+
+                    if (finalDir.exists() && finalDir.isDirectory()) {
+                        currentDir = canonicalPath;
+                    } else {
+                        System.out.println("cd: " + path + ": No such file or directory");
+                    }
+                } catch (Exception e) {
                     System.out.println("cd: " + path + ": No such file or directory");
                 }
             }
@@ -65,6 +72,7 @@ public class Main {
                     cmdName.equals("cd")) {
 
                     System.out.println(cmdName + " is a shell builtin");
+
                 } else {
                     String pathEnv = System.getenv("PATH");
                     String[] paths = pathEnv.split(":");
@@ -92,7 +100,7 @@ public class Main {
                 try {
                     ProcessBuilder pb = new ProcessBuilder(parts);
 
-                    // run in current directory (IMPORTANT for cd)
+                    // important: respect cd
                     pb.directory(new File(currentDir));
                     pb.inheritIO();
 
