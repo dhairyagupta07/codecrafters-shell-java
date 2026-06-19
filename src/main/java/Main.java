@@ -10,13 +10,13 @@ public class Main {
 
             String input = sc.nextLine();
 
-            // exit stage (usually already required)
             if (input.equals("exit 0")) {
                 break;
             }
 
-            // invalid command handling (this is #CZ2)
-            System.out.println(input + ": command not found");
+            if (!input.isEmpty()) {
+                System.out.println(input + ": command not found");
+            }
         }
 
         sc.close();
